@@ -56,6 +56,18 @@ backend changes.
 
 ## Traps specific to this repo
 
+- **`AppDelegate` sets `acceptsMouseMovedEvents` on every window, and must
+  keep doing so.** It defaults to *false*, and a SwiftUI app assembled outside
+  Xcode has nobody to set it. The result is a window where clicking and
+  dragging work perfectly — those are `mouseDown`/`mouseDragged` — while
+  everything riding on passive tracking is silently dead: no hover highlight on
+  any control, and **no tooltips**, because AppKit's tooltip manager waits for
+  the pointer to come to rest and never learns that it has. One flag, both
+  symptoms, and nothing about it shows up in a build, a test, or a reading of
+  the code.
+- **A destructive control does not rely on a tooltip.** Overwrite carries a
+  visible label. It also no longer uses a U-turn arrow, which sat next to undo
+  and redo and read as "revert" — close to the opposite of what it does.
 - **Use `.tip()`, not `.help()`, for anything outside the toolbar.** SwiftUI's
   `.help()` does not set `NSView.toolTip` for ordinary controls — verified in a
   minimal app containing nothing else, so it is not something about this app's

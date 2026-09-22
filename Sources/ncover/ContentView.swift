@@ -22,17 +22,28 @@ struct ContentView: View {
                     .disabled(!model.canRedo)
                     .help("Redo")
             }
+            // The two write actions carry visible labels. They are the
+            // consequential pair, one of them irreversibly so, and "you can
+            // hover to find out what destroys your file" is not a design.
             ToolbarItem {
-                Button { model.saveAs() } label: { Label("Save", systemImage: "square.and.arrow.down") }
-                    .disabled(model.preview == nil)
-                    .help(model.saveHelp)
+                Button { model.saveAs() } label: {
+                    Label("Save As…", systemImage: "square.and.arrow.down")
+                }
+                .labelStyle(.titleAndIcon)
+                .disabled(model.preview == nil)
+                .help(model.saveHelp)
             }
             ToolbarItem {
-                Button { model.overwrite() } label: { Label("Overwrite", systemImage: "arrow.uturn.backward.square") }
-                    .disabled(!model.canOverwrite)
-                    .help(model.canOverwrite
-                          ? "Replace the original PNG in place. This cannot be undone."
-                          : "Only a PNG can be overwritten — we save PNG, and rewriting a JPEG under its own name would silently change the format.")
+                Button { model.overwrite() } label: {
+                    // Not a U-turn arrow: it sat next to undo and redo and read
+                    // as "revert", which is close to the opposite of what it does.
+                    Label("Overwrite", systemImage: "square.and.arrow.down.on.square")
+                }
+                .labelStyle(.titleAndIcon)
+                .disabled(!model.canOverwrite)
+                .help(model.canOverwrite
+                      ? "Replace the original PNG in place. This cannot be undone."
+                      : "Only a PNG can be overwritten — we save PNG, and rewriting a JPEG under its own name would silently change the format.")
             }
         }
         .alert("n.cover", isPresented: Binding(

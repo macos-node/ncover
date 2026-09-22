@@ -60,6 +60,22 @@ func dumpTooltips() {
         }
         for w in NSApp.windows { if let cv = w.contentView { walk(cv) } }
         print("views=\(total)  withToolTip=\(withTip)")
+
+        var areas = 0, tipRects = 0
+        func tracking(_ v: NSView) {
+            areas += v.trackingAreas.count
+            v.subviews.forEach(tracking)
+        }
+        for w in NSApp.windows {
+            if let cv = w.contentView { tracking(cv) }
+            print("window \"\(w.title)\" key=\(w.isKeyWindow) main=\(w.isMainWindow) "
+                  + "visible=\(w.isVisible) acceptsMouseMoved=\(w.acceptsMouseMovedEvents) "
+                  + "level=\(w.level.rawValue) style=\(w.styleMask.rawValue)")
+        }
+        _ = tipRects
+        print("trackingAreas=\(areas)")
+        print("NSApp.isActive=\(NSApp.isActive) policy=\(NSApp.activationPolicy().rawValue)")
+        print("bundleID=\(Bundle.main.bundleIdentifier ?? "nil") bundlePath=\(Bundle.main.bundlePath)")
         exit(0)
     }
 }

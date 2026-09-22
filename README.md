@@ -186,6 +186,8 @@ what you did not.
 **Fit and finish**
 
 - [ ] Tooltips appear on the toolbar, the inspector controls and the canvas.
+- [ ] Controls highlight on hover at all. If nothing does, the window has lost
+      `acceptsMouseMovedEvents` and tooltips will be dead too — same fault.
 - [ ] Every icon-only control has a tooltip **that actually appears on hover**,
       and none renders blank. (`NCOVER_DUMP_TOOLTIPS=1` lists what is attached;
       only hovering proves it displays.)
