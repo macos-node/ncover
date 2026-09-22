@@ -15,6 +15,7 @@ make app     # build n.cover.app
 make run     # build and launch
 make test    # run the ported rule tests
 make install # copy to ~/Applications
+make icon    # regenerate ncover.icns from icon.svg (needs rsvg-convert)
 ```
 
 Needs Xcode (Swift 6, macOS 14+ target). No `.xcodeproj` — SwiftPM builds the

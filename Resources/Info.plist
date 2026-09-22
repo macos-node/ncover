@@ -6,6 +6,7 @@
   <key>CFBundleDisplayName</key>       <string>n.cover</string>
   <key>CFBundleExecutable</key>        <string>ncover</string>
   <key>CFBundleIdentifier</key>        <string>uk.upleb.ncover</string>
+  <key>CFBundleIconFile</key>          <string>ncover</string>
   <key>CFBundlePackageType</key>       <string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key>           <string>1</string>

@@ -56,6 +56,16 @@ backend changes.
 
 ## Traps specific to this repo
 
+- **The icon master is uncropped, and must stay that way.** `icon.svg` is the
+  Figma export shared with the GTK sibling: a 1024 canvas with the art in an
+  824 square, which is Apple's icon grid. The **Linux** build crops that margin
+  away to fill 89% of the tile, the way Yaru's icons do — doing the same here
+  would make n.cover oversized next to every other app in the Dock. `make icon`
+  therefore renders the master as-is.
+- **`ncover.icns` is committed**, so `make app` needs no `rsvg-convert`. Run
+  `make icon` after changing the art. Check the result with alpha intact —
+  `sips` flattens onto white, which hides a lost transparent margin completely.
+
 - **`AppDelegate` sets `acceptsMouseMovedEvents` on every window, and must
   keep doing so.** It defaults to *false*, and a SwiftUI app assembled outside
   Xcode has nobody to set it. The result is a window where clicking and
