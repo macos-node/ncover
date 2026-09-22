@@ -74,6 +74,12 @@ the record of what has actually been exercised on real files.
 - **Disc geometry measured on that output**: the alpha boundary sits at distance
   200.0 from the centre of a 400 canvas — exactly the radius — with the
   one-pixel ramp visible either side of it. It is a true circle.
+- **Resampling quality, measured against a direct render of the same SVG at the
+  same size.** 4.04% RMSE with the original fixed-raster-plus-nearest path,
+  1.63% with area-averaged downscaling, 1.24% once the SVG is also re-rendered
+  at the size it is drawn at — which is the WebKit-vs-librsvg floor, so the
+  resampling error is gone rather than merely reduced. Worst-case cost
+  (2048→400) is 15.3 ms, so the live preview is still the output image.
 
 **Not yet exercised, in rough order of how much it matters:**
 
@@ -110,6 +116,9 @@ what you did not.
 - [ ] A **slow** drag through the centre escapes the snap zone. (This was broken
       in the first build and is the reason the drag tests exist.)
 - [ ] Pinch-zoom works, and still works *during* a drag without fighting it.
+- [ ] After a pinch, an SVG re-sharpens rather than staying soft (it is
+      re-rendered at its new drawn size when the gesture ends).
+- [ ] Drag stays smooth on a large source — the downscale filter runs per frame.
 - [ ] Snap guides appear when an axis catches and vanish on release.
 - [ ] One axis can be snapped while the other is free.
 - [ ] Cover crops the long axis; Fit shows the whole image.
@@ -132,6 +141,8 @@ what you did not.
 - [ ] Alpha survives the file: reopen the saved PNG and the corners are still
       transparent.
 - [ ] The saved pixel size matches the chosen canvas.
+- [ ] Thin lines and curves in a shrunk image look smooth, not stepped or
+      unevenly thickened.
 - [ ] Overwrite is disabled for a JPEG, SVG and WebP source.
 - [ ] Overwrite on a PNG replaces it in place, and the result reopens correctly.
 

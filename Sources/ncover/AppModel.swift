@@ -107,6 +107,7 @@ final class AppModel: ObservableObject {
         snappedX = false; snappedY = false
         dragAnchor = nil
         rerender()
+        Task { await refreshSVGRaster() }
     }
 
     /// Changing the output size must not re-crop what you already framed.
@@ -114,6 +115,7 @@ final class AppModel: ObservableObject {
         guard source != nil, old != canvas, old > 0 else { rerender(); return }
         placement = placement.rescaled(from: old, to: canvas)
         rerender()
+        Task { await refreshSVGRaster() }
     }
 
     /// Dragging anchors on the placement as it was when the gesture began, and
@@ -160,6 +162,46 @@ final class AppModel: ObservableObject {
         p.scale = max(0.01, p.scale * factor)
         placement = p
         dragAnchor = nil   // the anchor described a different scale
+        rerender()
+    }
+
+    /// Called when a magnify gesture finishes — the scale has settled, so this
+    /// is the moment an SVG is worth re-rendering.
+    func endZoom() {
+        Task { await refreshSVGRaster() }
+    }
+
+    // MARK: - SVG resolution
+
+    /// Re-render the SVG at the size it is actually being drawn at.
+    ///
+    /// An SVG has no native resolution, so the only reason to resample one is
+    /// that we rendered it at the wrong size to begin with. Ask for the size it
+    /// occupies on the canvas and the downscale all but disappears — what is
+    /// left is WebKit rendering at the backing scale, which area-averages down
+    /// as clean supersampling rather than as loss.
+    ///
+    /// Cheap to do because **dragging never changes the scale** — only zoom and
+    /// canvas size do. So this runs on those two events, and preview and output
+    /// stay the same image rather than the file quietly being the better one.
+    func refreshSVGRaster() async {
+        guard isSVG, let url = sourceURL, let s = source else { return }
+        let placed = placement.w(s.width)          // canvas pixels
+        let target = Int(placed.rounded())
+        guard target > 0 else { return }
+        // Only bother when it is materially wrong; re-rendering for a 3%
+        // difference would just make zooming stutter.
+        let ratio = Double(s.width) / max(placed, 1)
+        guard ratio > 1.15 || ratio < 0.87 else { return }
+
+        busy = true
+        defer { busy = false }
+        guard let re = try? await SVGRasterizer.rasterize(url, side: target) else { return }
+        source = re
+        // The rasteriser returns the backing-scale multiple, so derive the new
+        // scale from what actually came back rather than from what we asked for.
+        placement = Placement(dx: placement.dx, dy: placement.dy,
+                              scale: placed / Double(re.width))
         rerender()
     }
 

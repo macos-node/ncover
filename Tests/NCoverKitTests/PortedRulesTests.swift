@@ -213,3 +213,73 @@ struct DragTests {
         #expect(r.placement == anchor)
     }
 }
+
+// MARK: - resampling
+
+private func solid(_ n: Int, _ c: RGBA) -> Raster {
+    var r = Raster(empty: n, height: n)
+    for y in 0..<n { for x in 0..<n { r.set(x, y, c) } }
+    return r
+}
+
+@Suite("resampling")
+struct ResampleTests {
+    /// Shrinking must average, not discard. Before this, a 2048px raster
+    /// reaching a 400px canvas kept one pixel in twenty-six.
+    @Test func downscaleAveragesRatherThanPicking() {
+        // A 2×2 checkerboard of black and white, shrunk to a single pixel.
+        var src = Raster(empty: 2, height: 2)
+        src.set(0, 0, RGBA(255, 255, 255, 255)); src.set(1, 1, RGBA(255, 255, 255, 255))
+        src.set(1, 0, RGBA(0, 0, 0, 255));       src.set(0, 1, RGBA(0, 0, 0, 255))
+        let out = compose(src, Placement(dx: 0, dy: 0, scale: 0.5), canvas: 1)
+        let c = out.sample(0, 0)
+        #expect(c.a == 255)
+        #expect(c.r >= 126 && c.r <= 129, "half black half white is mid grey, got \(c.r)")
+    }
+
+    /// The inherited rule, preserved where it is right: enlarging must not
+    /// invent a colour that is in neither neighbour.
+    @Test func upscaleInventsNoColours() {
+        var src = Raster(empty: 2, height: 2)
+        src.set(0, 0, RGBA(255, 0, 0, 255)); src.set(1, 0, RGBA(0, 0, 255, 255))
+        src.set(0, 1, RGBA(255, 0, 0, 255)); src.set(1, 1, RGBA(0, 0, 255, 255))
+        let out = compose(src, Placement(dx: 0, dy: 0, scale: 4), canvas: 8)
+        for y in 0..<8 {
+            for x in 0..<8 {
+                let c = out.sample(x, y)
+                #expect(c == RGBA(255, 0, 0, 255) || c == RGBA(0, 0, 255, 255),
+                        "invented \(c) at \(x),\(y)")
+            }
+        }
+    }
+
+    /// The premultiply test. Averaging straight RGBA lets a transparent pixel's
+    /// meaningless colour into the result — a red edge would come out dark red.
+    @Test func alphaEdgesDoNotFringe() {
+        var src = Raster(empty: 2, height: 2)
+        src.set(0, 0, RGBA(255, 0, 0, 255))      // one opaque red
+        // the other three stay fully transparent
+        let out = compose(src, Placement(dx: 0, dy: 0, scale: 0.5), canvas: 1)
+        let c = out.sample(0, 0)
+        #expect(c.a >= 63 && c.a <= 65, "a quarter covered, got alpha \(c.a)")
+        #expect(c.r == 255 && c.g == 0 && c.b == 0,
+                "colour must survive undiluted by transparent neighbours, got \(c)")
+    }
+
+    /// Averaging a uniform region must not drift its colour.
+    @Test func aFlatColourSurvivesADownscaleExactly() {
+        let src = solid(10, RGBA(200, 100, 50, 255))
+        let out = compose(src, Placement(dx: 0, dy: 0, scale: 0.5), canvas: 5)
+        #expect(out.sample(2, 2) == RGBA(200, 100, 50, 255))
+    }
+
+    /// Off the source counts as transparent, so a shrunk image gets a soft
+    /// boundary instead of the staircase nearest-neighbour leaves.
+    @Test func theBoundaryOfAShrunkImageIsAntialiased() {
+        let src = solid(9, RGBA(0, 0, 0, 255))
+        // Place it so its edge falls mid-pixel on the canvas.
+        let out = compose(src, Placement(dx: 0.5, dy: 0, scale: 1.0 / 3.0), canvas: 6)
+        let edge = out.sample(0, 0)
+        #expect(edge.a > 0 && edge.a < 255, "edge pixel should be partly covered, got \(edge.a)")
+    }
+}

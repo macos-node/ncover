@@ -44,6 +44,24 @@ make test    # 17 ported rule tests
   the furthest pixel *centre* rather than the abstract corner. Drawing through
   CG would add antialiasing and premultiplication we do not control and the port
   would drift from its specification silently.
+- **Two resamplers, and the direction picks which.** `compose` area-averages
+  when shrinking and stays nearest-neighbour when enlarging. That split is
+  deliberate: the GTK app's rule that *"a colour tool must not invent colours"*
+  is right for colour sampling and for pixel-exact enlargement, and was doing
+  real harm on the way down — a 2048px raster reaching a 400px canvas kept one
+  pixel in twenty-six, which thickened thin rules unevenly and hardened curves.
+  Measured against a direct render: 4.04% RMSE before, 1.63% after. **Do not
+  "simplify" these back into one path.** The downscale averages in
+  *premultiplied* space, too — averaging straight RGBA lets transparent pixels
+  drag their meaningless colour in, and every output here is alpha-edged.
+- **An SVG is re-rendered at the size it is drawn at, not resampled.** A vector
+  source has no native resolution, so resampling one is just an admission that
+  it was rendered wrong. `refreshSVGRaster()` re-rasterises on canvas-size
+  change, framing change and the end of a zoom — and **never on drag, because
+  dragging cannot change the scale**. That is what keeps it off the per-frame
+  path while leaving preview and output the same image. With both fixes the
+  error against a direct render falls to 1.24%, which is the WebKit-vs-librsvg
+  floor; the resampling component is gone.
 - **SVG goes through WKWebView, and that has three consequences.** It is
   asynchronous and main-actor bound, so a future batch must serialise through it
   rather than fan out. It renders at the *backing scale* — ask for 1024 and a

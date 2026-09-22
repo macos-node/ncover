@@ -40,6 +40,7 @@ struct CanvasView: View {
                     .simultaneousGesture(
                         MagnifyGesture()
                             .onChanged { v in model.zoom(by: 1 + (v.magnification - 1) * 0.06) }
+                            .onEnded { _ in model.endZoom() }
                     )
                     .help("""
                         Drag to move the image on the canvas. Pinch to zoom.
