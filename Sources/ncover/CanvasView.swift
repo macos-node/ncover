@@ -55,13 +55,10 @@ struct CanvasView: View {
                     )
                     .tip(model.samplingBackdrop
                           ? "Click a pixel to make it the backdrop colour."
-                          : """
-                            Drag to move the image on the canvas. Pinch to zoom.
-
-                            It snaps to the canvas centre and edges — each axis \
-                            independently, so you can be held horizontally while \
-                            still free vertically. A pink guide shows which one caught.
-                            """)
+                          // Short on purpose: this one fires whenever the
+                          // pointer rests anywhere on the artwork, so a
+                          // paragraph here is a paragraph draped over the work.
+                          : "Drag to move, pinch to zoom. Snaps to the centre and edges.")
                 } else {
                     VStack(spacing: 10) {
                         Image(systemName: "photo.on.rectangle.angled")

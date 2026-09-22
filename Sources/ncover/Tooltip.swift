@@ -54,8 +54,13 @@ final class TipPresenter {
         label.textColor = .controlTextColor
         label.drawsBackground = false
         label.isSelectable = false
-        label.preferredMaxLayoutWidth = 260
-        label.sizeToFit()
+        // sizeToFit() ignores preferredMaxLayoutWidth, so a long string came out
+        // as one enormous line spanning the window. Constrain the width and ask
+        // what height that needs.
+        let maxWidth: CGFloat = 320
+        label.preferredMaxLayoutWidth = maxWidth
+        label.setFrameSize(label.sizeThatFits(NSSize(width: maxWidth,
+                                                     height: .greatestFiniteMagnitude)))
 
         let pad: CGFloat = 6
         let size = NSSize(width: label.frame.width + pad * 2, height: label.frame.height + pad * 2)

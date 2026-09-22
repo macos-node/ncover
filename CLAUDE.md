@@ -87,6 +87,12 @@ backend changes.
   inside a `Form` would be clipped by it. Its only remaining dependency is
   `.onHover` firing, which needs the window flag above.
 
+  Two presentation details that were wrong first time: `NSTextField.sizeToFit()`
+  **ignores** `preferredMaxLayoutWidth`, so a long tip came out as one line
+  spanning the window — constrain the width and ask `sizeThatFits` for the
+  height. And keep the canvas tip to one line, because that one fires whenever
+  the pointer rests anywhere on the artwork.
+
   Trace hover with `NCOVER_TRACE_HOVER=1`. It writes to **stderr on purpose**:
   `print` is fully buffered when redirected to a file, and a version using it
   came back empty while tooltips were working — a diagnostic that lies is worse
