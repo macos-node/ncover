@@ -1,8 +1,11 @@
+import AppKit
 import SwiftUI
 
 @main
 struct NCoverApp: App {
     @StateObject private var model = AppModel()
+
+    init() { dumpTooltips() }
 
     var body: some Scene {
         Window("n.cover", id: "main") {

@@ -28,7 +28,7 @@ struct SwatchButton<Content: View>: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(help)
+        .tip(help)
         .accessibilityLabel(accessibility)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

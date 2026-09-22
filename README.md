@@ -186,7 +186,9 @@ what you did not.
 **Fit and finish**
 
 - [ ] Tooltips appear on the toolbar, the inspector controls and the canvas.
-- [ ] Every icon-only control has a tooltip, and none renders blank.
+- [ ] Every icon-only control has a tooltip **that actually appears on hover**,
+      and none renders blank. (`NCOVER_DUMP_TOOLTIPS=1` lists what is attached;
+      only hovering proves it displays.)
 - [ ] The mask shape icons match what the mask actually does.
 - [ ] The corner-fill swatches show the colours currently chosen.
 - [ ] Menu shortcuts work: ⌘O, ⌘S, ⇧⌘S.

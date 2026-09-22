@@ -53,7 +53,7 @@ struct CanvasView: View {
                             .onChanged { v in model.zoom(by: 1 + (v.magnification - 1) * 0.06) }
                             .onEnded { _ in model.endZoom() }
                     )
-                    .help(model.samplingBackdrop
+                    .tip(model.samplingBackdrop
                           ? "Click a pixel to make it the backdrop colour."
                           : """
                             Drag to move the image on the canvas. Pinch to zoom.
@@ -69,7 +69,7 @@ struct CanvasView: View {
                             .foregroundStyle(.tertiary)
                         Text("Open a PNG or SVG").foregroundStyle(.secondary)
                         Button("Open…") { model.open() }
-                            .help("Open artwork (PNG / SVG / JPEG / WebP)")
+                            .tip("Open artwork (PNG / SVG / JPEG / WebP)")
                     }
                 }
 

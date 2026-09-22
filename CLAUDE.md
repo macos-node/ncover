@@ -56,9 +56,20 @@ backend changes.
 
 ## Traps specific to this repo
 
-- **An icon-only control keeps both a `.help()` and an `.accessibilityLabel`.**
+- **Use `.tip()`, not `.help()`, for anything outside the toolbar.** SwiftUI's
+  `.help()` does not set `NSView.toolTip` for ordinary controls — verified in a
+  minimal app containing nothing else, so it is not something about this app's
+  `Form` or split view. It compiles, it reads correctly, and no tooltip ever
+  appears. Only toolbar items work, because they bridge to real
+  `NSToolbarItemViewer`s. `.tip()` attaches the tooltip to an AppKit view whose
+  `hitTest` returns nil, so clicks still reach the control beneath.
+  **Verify with `NCOVER_DUMP_TOOLTIPS=1 n.cover.app/Contents/MacOS/ncover`**,
+  which prints every view carrying a toolTip — this class of bug is invisible to
+  the tests and to reading the code.
+- **An icon-only control keeps both a `.tip()` and an `.accessibilityLabel`.**
   Dropping the visible word is only an improvement while the meaning is still
-  recoverable; an unlabelled glyph is a puzzle. And a `systemName` that does not
+  recoverable; an unlabelled glyph with a tooltip that does not appear is worse
+  than the word it replaced. And a `systemName` that does not
   resolve renders as **nothing at all** — silently — so new symbols get checked
   against `NSImage(systemSymbolName:)` rather than trusted. The mask shapes use
   symbols that *are* the shapes (`circle.fill`, `app.fill`, `octagon.fill`); a

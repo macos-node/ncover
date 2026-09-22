@@ -54,7 +54,7 @@ private struct Inspector: View {
                     LabeledContent("Size") {
                         Text(model.sourceDims + (model.isVector ? "  (rasterised)" : ""))
                     }
-                    .help(model.isVector
+                    .tip(model.isVector
                           ? "An SVG has no native resolution. It is re-rendered at the size it is drawn at, so it is never resampled."
                           : "The source image's own dimensions.")
                 }
@@ -65,18 +65,18 @@ private struct Inspector: View {
                     get: { model.canvas }, set: { model.canvas = $0 })) {
                     ForEach(CANVAS_SIZES, id: \.self) { Text("\($0) px").tag($0) }
                 }
-                .help("Output size. Changing it keeps your framing — the square around the picture grows, the picture does not move.")
+                .tip("Output size. Changing it keeps your framing — the square around the picture grows, the picture does not move.")
 
                 Picker("Framing", selection: $model.framing) {
                     Text("Cover").tag(Framing.cover)
                     Text("Fit").tag(Framing.fit)
                 }
                 .pickerStyle(.segmented)
-                .help("Cover fills the square (edges cropped); Fit puts the whole image inside it.")
+                .tip("Cover fills the square (edges cropped); Fit puts the whole image inside it.")
 
                 Button("Reset placement") { model.resetFraming() }
                     .disabled(model.preview == nil)
-                    .help("Re-centre the image and undo any dragging or zooming.")
+                    .tip("Re-centre the image and undo any dragging or zooming.")
             }
 
             Section("Backdrop") {
@@ -88,17 +88,17 @@ private struct Inspector: View {
                         Button { model.samplingBackdrop.toggle() } label: {
                             Image(systemName: "eyedropper")
                         }
-                        .help("Pick from the image — then click a pixel on the canvas.")
+                        .tip("Pick from the image — then click a pixel on the canvas.")
                         .accessibilityLabel("Pick backdrop from image")
                         Button { model.pickBackdropFromScreen() } label: {
                             Image(systemName: "eyedropper.halffull")
                         }
-                        .help("Pick from anywhere on screen, using the system colour sampler.")
+                        .tip("Pick from anywhere on screen, using the system colour sampler.")
                         .accessibilityLabel("Pick backdrop from screen")
                     }
                     .buttonStyle(.borderless)
                 }
-                .help("What sits behind the artwork while you work, so alpha can be judged against a real background. Never written to the file.")
+                .tip("What sits behind the artwork while you work, so alpha can be judged against a real background. Never written to the file.")
 
                 if model.samplingBackdrop {
                     Text("Click a pixel on the canvas…")
@@ -108,18 +108,17 @@ private struct Inspector: View {
 
             Section("Mask") {
                 Toggle("Mask", isOn: $model.discOn)
-                    .help("The mask is inscribed in the CANVAS, not fitted to the artwork — so an inset source is only clipped at its corners.")
+                    .tip("The mask is inscribed in the CANVAS, not fitted to the artwork — so an inset source is only clipped at its corners.")
                 if model.discOn {
                     Picker("Shape", selection: $model.maskShape) {
                         ForEach(AppModel.MaskKind.allCases) { kind in
                             Image(systemName: kind.symbol)
                                 .accessibilityLabel(kind.label)
-                                .help(kind.help)
                                 .tag(kind)
                         }
                     }
                     .pickerStyle(.segmented)
-                    .help("Disc, rounded rectangle, or chamfer. Rounded and chamfer cut corners by the amount below — at 100% a rounded rectangle IS the disc.")
+                    .tip("Disc, rounded rectangle, or chamfer. Rounded and chamfer cut corners by the amount below — at 100% a rounded rectangle IS the disc.")
 
                     if model.maskHasAmount {
                         LabeledContent("Amount") {
@@ -130,7 +129,7 @@ private struct Inspector: View {
                                     .frame(width: 38, alignment: .trailing)
                             }
                         }
-                        .help("How much corner goes, as a fraction of half the canvas.")
+                        .tip("How much corner goes, as a fraction of half the canvas.")
                     }
 
                     LabeledContent("Corners") {
@@ -139,15 +138,15 @@ private struct Inspector: View {
                                 gradInner: model.gradInner,
                                 gradOuter: model.gradOuter)
                     }
-                    .help("What sits outside the mask. Transparent is the honest default for artwork that will sit on an unknown background.")
+                    .tip("What sits outside the mask. Transparent is the honest default for artwork that will sit on an unknown background.")
                     switch model.fillKind {
                     case .solid:
                         ColorPicker("Colour", selection: $model.solid, supportsOpacity: false)
                     case .gradient:
                         ColorPicker("At the rim", selection: $model.gradInner, supportsOpacity: false)
-                            .help("The colour where the fill meets the mask's edge.")
+                            .tip("The colour where the fill meets the mask's edge.")
                         ColorPicker("At the corner", selection: $model.gradOuter, supportsOpacity: false)
-                            .help("The colour reached at the very corner of the canvas.")
+                            .tip("The colour reached at the very corner of the canvas.")
                     case .alpha, .white:
                         EmptyView()
                     }
@@ -195,7 +194,7 @@ private struct StepRow: View {
             Spacer()
             Image(systemName: step.hasVectorForm ? "checkmark.seal" : "xmark.seal")
                 .foregroundStyle(step.hasVectorForm ? Color.secondary : Color.orange)
-                .help(step.hasVectorForm ? "has a vector form" : "raster only")
+                .tip(step.hasVectorForm ? "has a vector form" : "raster only")
         }
         .font(.callout)
     }
