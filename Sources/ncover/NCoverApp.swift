@@ -32,8 +32,6 @@ struct NCoverApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
 
-    init() { dumpTooltips() }
-
     var body: some Scene {
         Window("n.cover", id: "main") {
             ContentView()

@@ -68,16 +68,29 @@ backend changes.
 - **A destructive control does not rely on a tooltip.** Overwrite carries a
   visible label. It also no longer uses a U-turn arrow, which sat next to undo
   and redo and read as "revert" — close to the opposite of what it does.
-- **Use `.tip()`, not `.help()`, for anything outside the toolbar.** SwiftUI's
-  `.help()` does not set `NSView.toolTip` for ordinary controls — verified in a
-  minimal app containing nothing else, so it is not something about this app's
-  `Form` or split view. It compiles, it reads correctly, and no tooltip ever
-  appears. Only toolbar items work, because they bridge to real
-  `NSToolbarItemViewer`s. `.tip()` attaches the tooltip to an AppKit view whose
-  `hitTest` returns nil, so clicks still reach the control beneath.
-  **Verify with `NCOVER_DUMP_TOOLTIPS=1 n.cover.app/Contents/MacOS/ncover`**,
-  which prints every view carrying a toolTip — this class of bug is invisible to
-  the tests and to reading the code.
+- **Use `.tip()`, not `.help()`, for anything outside the toolbar, and do not
+  try to simplify it back.** Getting a tooltip to appear here took three
+  mechanisms, and the two that failed both looked correct:
+  1. SwiftUI's `.help()` never sets `NSView.toolTip` for ordinary controls —
+     verified in a minimal app containing nothing else, so it is not this app's
+     `Form` or split view. Only toolbar items work, because they bridge to real
+     `NSToolbarItemViewer`s. That is why `.help()` survives in the toolbar.
+  2. Setting `NSView.toolTip` on an overlay *did* attach it — the views were
+     present, correctly sized and not hidden — and still nothing appeared.
+     `NSToolTipManager` hit-tests its way to the view, and the overlay returned
+     nil from `hitTest` so that clicks could reach the control beneath. **The
+     thing that made it harmless made it invisible.**
+
+  `.tip()` therefore owns the whole mechanism: `.onHover` to trigger, a 0.5s
+  delay so it does not flash while the pointer passes through, and a borderless
+  panel to present — a panel rather than a SwiftUI overlay, because a tooltip
+  inside a `Form` would be clipped by it. Its only remaining dependency is
+  `.onHover` firing, which needs the window flag above.
+
+  Trace hover with `NCOVER_TRACE_HOVER=1`. It writes to **stderr on purpose**:
+  `print` is fully buffered when redirected to a file, and a version using it
+  came back empty while tooltips were working — a diagnostic that lies is worse
+  than no diagnostic.
 - **An icon-only control keeps both a `.tip()` and an `.accessibilityLabel`.**
   Dropping the visible word is only an improvement while the meaning is still
   recoverable; an unlabelled glyph with a tooltip that does not appear is worse

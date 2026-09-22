@@ -189,8 +189,8 @@ what you did not.
 - [ ] Controls highlight on hover at all. If nothing does, the window has lost
       `acceptsMouseMovedEvents` and tooltips will be dead too — same fault.
 - [ ] Every icon-only control has a tooltip **that actually appears on hover**,
-      and none renders blank. (`NCOVER_DUMP_TOOLTIPS=1` lists what is attached;
-      only hovering proves it displays.)
+      and none renders blank. (`NCOVER_TRACE_HOVER=1` proves hover is reaching
+      the app; only looking proves the tooltip is drawn.)
 - [ ] The mask shape icons match what the mask actually does.
 - [ ] The corner-fill swatches show the colours currently chosen.
 - [ ] Menu shortcuts work: ⌘O, ⌘S, ⇧⌘S.
