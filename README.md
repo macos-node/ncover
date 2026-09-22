@@ -67,16 +67,28 @@ the record of what has actually been exercised on real files.
   signature survived.
 - Pinch-zoom, snap guides and the disc mask behave.
 - Save writes a PNG.
+- **Overwrite replaces a PNG in place**, on a copy saved for the purpose. The
+  written file was measured afterwards: 400×400 as chosen, corners genuinely at
+  `alpha=0`, so alpha survives end to end — checked against the file rather than
+  trusted from the writer.
+- **Disc geometry measured on that output**: the alpha boundary sits at distance
+  200.0 from the centre of a 400 canvas — exactly the radius — with the
+  one-pixel ramp visible either side of it. It is a true circle.
 
 **Not yet exercised, in rough order of how much it matters:**
 
-- **Overwrite.** The one path that replaces a user's file in place. Guarded in
-  code and covered by a unit test, but never run against a real PNG.
-- **Alpha survival end to end** — reopening a saved PNG and confirming the
-  corners are still transparent, rather than trusting the writer.
 - Changing canvas size mid-edit and confirming the framing is kept, not re-cropped.
 - JPEG and WebP sources; a corrupt file producing a readable error.
 - Menu shortcuts, tooltips, window resize.
+
+### A thing worth knowing about the disc
+
+The disc is inscribed in the **canvas**, not fitted to the artwork. Give it a
+source that does not fill the canvas — an icon with a grid margin, anything
+placed with Fit — and the circle only grazes the artwork's four corners, which
+reads as a shallow 45° chamfer rather than a record. That is correct behaviour
+and measurably a circle; it just is not what the eye expects. For the classic
+disc, the source has to reach the canvas edges.
 
 ### Manual checklist
 
