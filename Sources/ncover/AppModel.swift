@@ -3,35 +3,38 @@ import NCoverKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Everything the window is showing, and the one place the pipeline is run.
+/// The window's state. The document is the source of truth — everything the UI
+/// shows is read out of its operation list, and every edit goes through
+/// `mutate`, which is what makes undo a stack of documents rather than a set of
+/// hand-written inverse operations.
+///
+/// The UI currently edits a fixed shape of that list (one placement, one
+/// optional mask). The *model* does not care: arbitrary stacking is a UI job
+/// that can be done later without touching the backends.
 @MainActor
 final class AppModel: ObservableObject {
-    // Source
-    @Published private(set) var source: Raster?
+    @Published private(set) var doc: Composition?
     @Published private(set) var sourceURL: URL?
-    @Published private(set) var sourceName: String = "no image"
-    @Published private(set) var isSVG = false
-
-    // Recipe
-    @Published var canvas: Int = CANVAS_DEFAULT { didSet { rescaleFraming(from: oldValue) } }
-    @Published var framing: Framing = .cover { didSet { resetFraming() } }
-    @Published var discOn = false { didSet { rerender() } }
-    @Published var fillKind: FillKind = .alpha { didSet { rerender() } }
-    @Published var solid: Color = .white { didSet { rerender() } }
-    @Published var gradInner: Color = .black { didSet { rerender() } }
-    @Published var gradOuter: Color = .white { didSet { rerender() } }
-
-    // Placement
-    @Published var placement = Placement(dx: 0, dy: 0, scale: 1)
-    /// Where the placement stood when the current drag began. `nil` between drags.
-    private var dragAnchor: Placement?
-    @Published private(set) var snappedX = false
-    @Published private(set) var snappedY = false
-
-    // Output
+    @Published private(set) var sourceName = "no image"
     @Published private(set) var preview: NSImage?
-    @Published var error: String?
     @Published private(set) var busy = false
+    @Published var error: String?
+
+    /// Framing is an intent, not an operation — it says how to *compute* a
+    /// placement, and the placement is what gets recorded.
+    @Published var framing: Framing = .cover { didSet { resetFraming() } }
+
+    // Colours are remembered even while the fill is transparent, so switching
+    // back does not lose what you picked.
+    @Published var solid: Color = .white       { didSet { rebuild() } }
+    @Published var gradInner: Color = .black   { didSet { rebuild() } }
+    @Published var gradOuter: Color = .white   { didSet { rebuild() } }
+    @Published var fillKind: FillKind = .alpha { didSet { rebuild() } }
+    @Published var discOn = false              { didSet { rebuild() } }
+
+    private var undoStack: [Composition] = []
+    private var redoStack: [Composition] = []
+    private var dragAnchor: Placement?
 
     enum FillKind: String, CaseIterable, Identifiable {
         case alpha, white, solid, gradient
@@ -46,8 +49,54 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var recipe: Recipe {
-        Recipe(canvas: canvas, framing: framing, disc: discOn ? outerFill : nil)
+    // MARK: - derived
+
+    var canvas: Int {
+        get { doc?.canvas ?? CANVAS_DEFAULT }
+        set {
+            guard let d = doc, newValue != d.canvas else { return }
+            mutate { doc in
+                let old = doc.canvas
+                doc.canvas = newValue
+                // Changing the output size must not re-crop what you framed.
+                if let p = doc.placement { doc.setPlacement(p.rescaled(from: old, to: newValue)) }
+            }
+            Task { await refreshSVGRaster() }
+        }
+    }
+
+    var sourceDims: String {
+        guard let d = doc else { return "" }
+        return "\(d.source.raster.width)×\(d.source.raster.height)"
+    }
+    var isVector: Bool { doc?.source.isVector ?? false }
+    var canUndo: Bool { !undoStack.isEmpty }
+    var canRedo: Bool { !redoStack.isEmpty }
+    var canOverwrite: Bool { sourceURL?.pathExtension.lowercased() == "png" }
+
+    /// Why SVG export is unavailable, in words meant for a person.
+    var vectorRefusal: String? { doc?.vectorRefusal ?? "nothing is open" }
+    var canSaveVector: Bool { doc?.vectorRefusal == nil }
+
+    var saveHelp: String {
+        canSaveVector
+            ? "Save as PNG, or as SVG to keep it vector at any size."
+            : "Save as PNG. SVG is unavailable because " + (vectorRefusal ?? "") + "."
+    }
+
+    /// One row of the operation list, for showing. This is the app's actual
+    /// shape, surfaced rather than implied.
+    struct Step: Identifiable {
+        let id: Int
+        let label: String
+        let hasVectorForm: Bool
+    }
+
+    var steps: [Step] {
+        let ops = doc?.ops ?? []
+        return ops.enumerated().map {
+            Step(id: $0.offset, label: $0.element.label, hasVectorForm: $0.element.hasVectorForm)
+        }
     }
 
     private var outerFill: OuterFill {
@@ -59,9 +108,67 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var sourceDims: String {
-        guard let s = source else { return "" }
-        return "\(s.width)×\(s.height)"
+    // MARK: - editing
+
+    /// Every change to the document goes through here, so undo needs no
+    /// per-operation inverse — it is just the previous value.
+    private func mutate(record: Bool = true, _ change: (inout Composition) -> Void) {
+        guard var d = doc else { return }
+        if record { undoStack.append(d); redoStack.removeAll() }
+        change(&d)
+        doc = d
+        rerender()
+    }
+
+    func undo() {
+        guard let current = doc, let previous = undoStack.popLast() else { return }
+        redoStack.append(current)
+        doc = previous
+        syncControlsFromDocument()
+        rerender()
+    }
+
+    func redo() {
+        guard let current = doc, let next = redoStack.popLast() else { return }
+        undoStack.append(current)
+        doc = next
+        syncControlsFromDocument()
+        rerender()
+    }
+
+    /// After undo the controls must follow the document, not the other way
+    /// round — otherwise the next edit would write the stale control back.
+    private func syncControlsFromDocument() {
+        guard let d = doc else { return }
+        var found: OuterFill?
+        for case .mask(_, let fill) in d.ops { found = fill }
+        withControlsSilenced {
+            discOn = found != nil
+            switch found {
+            case .alpha?:            fillKind = .alpha
+            case .white?:            fillKind = .white
+            case .solid(let c)?:     fillKind = .solid;    solid = Color(c)
+            case .gradient(let i, let o)?:
+                fillKind = .gradient; gradInner = Color(i); gradOuter = Color(o)
+            case nil:                break
+            }
+        }
+    }
+
+    private var silenced = false
+    private func withControlsSilenced(_ body: () -> Void) {
+        silenced = true; body(); silenced = false
+    }
+
+    /// Write the controls into the operation list.
+    private func rebuild() {
+        guard !silenced, doc != nil else { return }
+        let fill = outerFill
+        let on = discOn
+        mutate { doc in
+            doc.ops.removeAll { if case .mask = $0 { return true }; return false }
+            if on { doc.ops.append(.mask(.disc, fill: fill)) }
+        }
     }
 
     // MARK: - opening
@@ -69,8 +176,7 @@ final class AppModel: ObservableObject {
     func open() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .jpeg, .svg, .webP]
-        panel.allowsMultipleSelection = false
-        panel.message = "Open cover artwork"
+        panel.message = "Open artwork"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await load(url) }
     }
@@ -79,17 +185,22 @@ final class AppModel: ObservableObject {
         busy = true
         defer { busy = false }
         do {
-            let ext = url.pathExtension.lowercased()
-            let svg = ext == "svg"
-            // An SVG has no intrinsic pixel size worth trusting, so rasterise it
-            // big enough to interrogate and to survive any canvas we offer.
-            let raster = svg
-                ? try await SVGRasterizer.rasterize(url, side: 1024)
-                : try Raster.load(contentsOf: url)
-            source = raster
+            let isSVG = url.pathExtension.lowercased() == "svg"
+            let raster: Raster
+            var vector: VectorSource?
+            if isSVG {
+                raster = try await SVGRasterizer.rasterize(url, side: 1024)
+                let text = try String(contentsOf: url, encoding: .utf8)
+                vector = VectorSource(svg: text,
+                                      width: Double(raster.width), height: Double(raster.height))
+            } else {
+                raster = try Raster.load(contentsOf: url)
+            }
+            let keepCanvas = doc?.canvas ?? CANVAS_DEFAULT
+            doc = Composition(source: Source(raster: raster, vector: vector), canvas: keepCanvas)
             sourceURL = url
             sourceName = url.lastPathComponent
-            isSVG = svg
+            undoStack.removeAll(); redoStack.removeAll()
             error = nil
             resetFraming()
         } catch {
@@ -97,157 +208,118 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: - framing
+    // MARK: - framing and gestures
 
     func resetFraming() {
-        guard let s = source else { preview = nil; return }
-        placement = framing == .cover
-            ? Placement.cover(sw: s.width, sh: s.height, canvas: canvas)
-            : Placement.fit(sw: s.width, sh: s.height, canvas: canvas)
-        snappedX = false; snappedY = false
-        dragAnchor = nil
-        rerender()
+        guard let d = doc else { preview = nil; return }
+        let s = d.source.raster
+        let p = framing == .cover
+            ? Placement.cover(sw: s.width, sh: s.height, canvas: d.canvas)
+            : Placement.fit(sw: s.width, sh: s.height, canvas: d.canvas)
+        snappedX = false; snappedY = false; dragAnchor = nil
+        mutate { $0.setPlacement(p) }
         Task { await refreshSVGRaster() }
     }
 
-    /// Changing the output size must not re-crop what you already framed.
-    private func rescaleFraming(from old: Int) {
-        guard source != nil, old != canvas, old > 0 else { rerender(); return }
-        placement = placement.rescaled(from: old, to: canvas)
-        rerender()
-        Task { await refreshSVGRaster() }
-    }
+    @Published private(set) var snappedX = false
+    @Published private(set) var snappedY = false
 
-    /// Dragging anchors on the placement as it was when the gesture began, and
-    /// every update recomputes from **that** anchor plus the gesture's total
-    /// translation.
-    ///
-    /// Accumulating deltas onto the *snapped* placement instead looks equivalent
-    /// and is not: inside a snap zone every frame would be pulled back to the
-    /// target and the motion in between thrown away, so a slow drag could never
-    /// escape the centre guide while a fast flick sailed through. Snap is for
-    /// display; the anchor is the truth.
-    func beginDrag() {
-        if dragAnchor == nil { dragAnchor = placement }
-    }
+    func beginDrag() { if dragAnchor == nil { dragAnchor = doc?.placement } }
 
     func dragTo(_ translation: CGSize, viewScale: Double) {
-        guard let s = source, let anchor = dragAnchor, viewScale > 0 else { return }
+        guard let d = doc, let anchor = dragAnchor else { return }
         let r = resolveDrag(anchor: anchor,
-                            translationX: translation.width,
-                            translationY: translation.height,
+                            translationX: translation.width, translationY: translation.height,
                             viewScale: viewScale,
-                            sw: s.width, sh: s.height, canvas: canvas)
-        placement = r.placement
-        snappedX = r.snappedX
-        snappedY = r.snappedY
-        rerender()
+                            sw: d.source.raster.width, sh: d.source.raster.height,
+                            canvas: d.canvas)
+        snappedX = r.snappedX; snappedY = r.snappedY
+        // One undo entry per drag, not per frame: record on the first move only.
+        mutate(record: undoStack.last?.placement != anchor) { $0.setPlacement(r.placement) }
     }
 
-    /// The snapped placement stays; only the guides go. They answer "why did it
-    /// stop moving", which is a question about a drag in progress.
-    func endDrag() {
-        dragAnchor = nil
-        snappedX = false
-        snappedY = false
-    }
+    func endDrag() { dragAnchor = nil; snappedX = false; snappedY = false }
 
     func zoom(by factor: Double) {
-        guard source != nil, factor > 0 else { return }
-        // Zoom about the canvas centre, so the thing you framed stays framed.
-        let c = Double(canvas) / 2
-        var p = placement
+        guard let d = doc, var p = d.placement, factor > 0 else { return }
+        let c = Double(d.canvas) / 2
         p.dx = c + (p.dx - c) * factor
         p.dy = c + (p.dy - c) * factor
         p.scale = max(0.01, p.scale * factor)
-        placement = p
-        dragAnchor = nil   // the anchor described a different scale
-        rerender()
+        dragAnchor = nil
+        mutate(record: false) { $0.setPlacement(p) }
     }
 
-    /// Called when a magnify gesture finishes — the scale has settled, so this
-    /// is the moment an SVG is worth re-rendering.
-    func endZoom() {
-        Task { await refreshSVGRaster() }
-    }
+    func endZoom() { Task { await refreshSVGRaster() } }
 
     // MARK: - SVG resolution
 
-    /// Re-render the SVG at the size it is actually being drawn at.
-    ///
-    /// An SVG has no native resolution, so the only reason to resample one is
-    /// that we rendered it at the wrong size to begin with. Ask for the size it
-    /// occupies on the canvas and the downscale all but disappears — what is
-    /// left is WebKit rendering at the backing scale, which area-averages down
-    /// as clean supersampling rather than as loss.
-    ///
-    /// Cheap to do because **dragging never changes the scale** — only zoom and
-    /// canvas size do. So this runs on those two events, and preview and output
-    /// stay the same image rather than the file quietly being the better one.
+    /// Re-render the SVG at the size it is actually drawn at. Cheap because
+    /// dragging cannot change the scale — only zoom, framing and canvas size can.
     func refreshSVGRaster() async {
-        guard isSVG, let url = sourceURL, let s = source else { return }
-        let placed = placement.w(s.width)          // canvas pixels
+        guard let d = doc, d.source.isVector, let url = sourceURL, let p = d.placement else { return }
+        let placed = p.w(d.source.raster.width)
         let target = Int(placed.rounded())
         guard target > 0 else { return }
-        // Only bother when it is materially wrong; re-rendering for a 3%
-        // difference would just make zooming stutter.
-        let ratio = Double(s.width) / max(placed, 1)
+        let ratio = Double(d.source.raster.width) / max(placed, 1)
         guard ratio > 1.15 || ratio < 0.87 else { return }
 
         busy = true
         defer { busy = false }
         guard let re = try? await SVGRasterizer.rasterize(url, side: target) else { return }
-        source = re
-        // The rasteriser returns the backing-scale multiple, so derive the new
-        // scale from what actually came back rather than from what we asked for.
-        placement = Placement(dx: placement.dx, dy: placement.dy,
-                              scale: placed / Double(re.width))
-        rerender()
+        mutate(record: false) { doc in
+            doc.source.raster = re
+            doc.setPlacement(Placement(dx: p.dx, dy: p.dy, scale: placed / Double(re.width)))
+        }
     }
 
     // MARK: - render
 
     func rerender() {
-        guard let s = source else { preview = nil; return }
-        let out = renderFull(s)
-        preview = out.nsImage()
-    }
-
-    private func renderFull(_ s: Raster) -> Raster {
-        let framed = compose(s, placement, canvas: canvas)
-        guard discOn else { return framed }
-        return discTemplate(framed, fill: outerFill) ?? framed
+        guard let d = doc else { preview = nil; return }
+        preview = renderRaster(d).nsImage()
     }
 
     // MARK: - saving
 
     func saveAs() {
-        guard let s = source else { return }
+        guard let d = doc else { return }
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        // Output is always PNG — the disc / label mask needs an alpha channel.
-        panel.nameFieldStringValue = (sourceURL?.deletingPathExtension().lastPathComponent ?? "cover") + ".png"
-        panel.message = "Save as PNG"
+        // SVG is offered only when the document can actually produce it.
+        panel.allowedContentTypes = canSaveVector ? [.png, .svg] : [.png]
+        panel.nameFieldStringValue =
+            (sourceURL?.deletingPathExtension().lastPathComponent ?? "artwork") + ".png"
+        panel.message = canSaveVector
+            ? "PNG rasterises. SVG keeps the artwork as vector at any size."
+            : "Saving as PNG — SVG unavailable because \(vectorRefusal ?? "")."
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try renderFull(s).writePNG(to: url); error = nil }
-        catch { self.error = error.localizedDescription }
-    }
-
-    /// Replace the original PNG in place. Guarded: never anything but a PNG.
-    func overwrite() {
-        guard let s = source, let url = sourceURL else { return }
         do {
-            try guardOverwrite(source: url)
-            try renderFull(s).writePNG(to: url)
+            if url.pathExtension.lowercased() == "svg" {
+                guard let svg = renderVector(d) else {
+                    throw NSError(domain: "ncover", code: 1, userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Cannot write SVG: \(vectorRefusal ?? "unknown reason")."])
+                }
+                try svg.write(to: url, atomically: true, encoding: .utf8)
+            } else {
+                try renderRaster(d).writePNG(to: url)
+            }
             error = nil
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    var canOverwrite: Bool {
-        guard let url = sourceURL else { return false }
-        return url.pathExtension.lowercased() == "png"
+    /// Replace the original PNG in place. Guarded: never anything but a PNG.
+    func overwrite() {
+        guard let d = doc, let url = sourceURL else { return }
+        do {
+            try guardOverwrite(source: url)
+            try renderRaster(d).writePNG(to: url)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
 
@@ -264,5 +336,9 @@ extension Color {
         return RGB(UInt8((ns.redComponent * 255).rounded()),
                    UInt8((ns.greenComponent * 255).rounded()),
                    UInt8((ns.blueComponent * 255).rounded()))
+    }
+    init(_ c: RGB) {
+        self.init(.sRGB, red: Double(c.r) / 255, green: Double(c.g) / 255,
+                  blue: Double(c.b) / 255, opacity: 1)
     }
 }

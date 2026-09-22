@@ -24,7 +24,53 @@ make run     # build and launch
 make test    # 17 ported rule tests
 ```
 
+## The shape: a composition, not a pipeline
+
+A **`Composition`** is a *source* plus an ordered list of **`Operation`**s. Two
+backends consume that same list:
+
+- **`renderRaster`** — always available, and what the preview shows, so what is
+  on screen is what a PNG export writes.
+- **`renderVector`** — available when the source is an SVG *and* every operation
+  in the list has a vector form. Returns `nil` otherwise, and
+  `Composition.vectorRefusal` gives the reason in words meant for a person
+  ("step 3, Invert, has no vector form").
+
+This is the thing to understand before changing anything. Adding a capability
+means **adding an `Operation` case and answering `hasVectorForm` honestly** — it
+does not mean touching a pipeline. Answering that property wrong is the one way
+to corrupt output silently: claim a vector form you have not written and SVG
+export will quietly drop the step.
+
+Undo is a stack of `Composition` values, so no operation needs a hand-written
+inverse. Every edit goes through `AppModel.mutate`; anything that bypasses it is
+a bug, because it will not be undoable.
+
+**Rasterising an SVG in order to write an SVG is pure loss** — that is why the
+vector backend exists. A vector source has no native resolution, so every pixel
+the raster path produces is a decision that did not need making.
+
+The UI currently edits a fixed shape of the list (one placement, one optional
+mask). That is a UI limitation, not a model one: arbitrary stacking needs no
+backend changes.
+
 ## Traps specific to this repo
+
+- **`Mask` is a signed distance function, not a shape.** Coverage, the corner
+  gradient and the vector clip path are all derived from it, so a new shape is a
+  new `signedDistance` case plus its two SVG forms — roughly five lines, with the
+  antialiased rim and the gradient following for free. `discTemplate` survives as
+  a thin wrapper over `applyMask(.disc,)` **on purpose**: it keeps the tests
+  ported from the GTK app pointed at the path they were written against, so if
+  generalising ever moves the disc by a pixel, they say so.
+- **An outer fill must be clipped to the INVERSE of the mask.** In the raster
+  backend the `(1 - coverage)` term says this implicitly. In SVG it has to be
+  said out loud, as an even-odd path of canvas-minus-shape. A plain filled rect
+  behind the artwork looks almost right and is wrong: it also shows through
+  every transparent pixel *inside* the mask.
+- **Both backends normalise the gradient to the furthest drawn pixel centre**,
+  and a test ties the two together numerically. Change one without the other and
+  an exported SVG stops matching the screen.
 
 - **No `.xcodeproj`, on purpose.** SwiftPM builds the binary; the Makefile
   assembles the bundle around it. A generated `pbxproj` is neither readable nor

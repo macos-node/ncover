@@ -186,39 +186,41 @@ public func invertRGB(_ src: Raster) -> Raster {
     return out
 }
 
-/// Mask `src` into a disc inscribed in a square canvas, filling the corners
-/// per `fill`.
+/// Mask `src` to a shape inscribed in a square canvas, filling outside it.
+///
+/// The shape arrives as a signed distance function (`Mask`), so this one
+/// routine does every shape: the antialiased rim, the corner fill and the
+/// gradient normalisation are all derived from that distance rather than
+/// written per shape. Adding a rounded rectangle or a chamfer is a new
+/// `signedDistance` case and nothing here.
 ///
 /// The source is scaled to COVER the square (never letterboxed — a disc with
 /// bars through it is not a disc), and the rim is antialiased over one pixel so
 /// the edge does not read as a staircase.
-public func discTemplate(_ src: Raster, fill: OuterFill) -> Raster? {
+public func applyMask(_ src: Raster, _ mask: Mask, fill: OuterFill) -> Raster? {
     let sw = src.width, sh = src.height
     guard sw > 0, sh > 0 else { return nil }
 
     let size = max(sw, sh)
     var dst = Raster(empty: size, height: size)
 
-    let cx = Double(size) / 2, cy = Double(size) / 2
-    let radius = Double(size) / 2
+    let fsize = Double(size)
+    let cx = fsize / 2, cy = fsize / 2
     // Cover: the smaller source axis must reach across the square.
-    let scale = Double(size) / Double(min(sw, sh))
-    // Gradient normalisation: distance to the furthest PIXEL CENTRE, not to the
-    // abstract corner. A pixel's centre is half a pixel inside the corner, so
+    let scale = fsize / Double(min(sw, sh))
+    // Normalise the gradient to the furthest PIXEL CENTRE, not to the abstract
+    // corner. A pixel's centre is half a pixel inside the corner, so
     // normalising to the corner leaves the corner pixel short of the outer stop
     // (94.7% on a 64px canvas — ask for black->white and the corner comes out
-    // #F1F1F1). The furthest thing that actually gets drawn should reach the
-    // end of the ramp.
-    let corner = ((cx - 0.5) * (cx - 0.5) + (cy - 0.5) * (cy - 0.5)).squareRoot()
+    // #F1F1F1). The furthest thing actually drawn should reach the end of the ramp.
+    let sdMax = mask.maxSignedDistance(size: fsize)
 
     for y in 0..<size {
         for x in 0..<size {
-            let ddx = Double(x) + 0.5 - cx
-            let ddy = Double(y) + 0.5 - cy
-            let dist = (ddx * ddx + ddy * ddy).squareRoot()
+            let sd = mask.signedDistance(x: Double(x) + 0.5, y: Double(y) + 0.5, size: fsize)
 
             // Coverage: 1 inside, 0 outside, ramped across the last pixel.
-            let cov = ((radius - dist) + 0.5).clamped(0, 1)
+            let cov = (0.5 - sd).clamped(0, 1)
 
             // Source pixel under this destination pixel (cover-scaled, centred).
             let sx = Int(((Double(x) - cx) / scale + Double(sw) / 2).rounded(.down))
@@ -231,13 +233,13 @@ public func discTemplate(_ src: Raster, fill: OuterFill) -> Raster? {
             case .white:        outC = RGBA(255, 255, 255, 255)
             case .solid(let c): outC = RGBA(c.r, c.g, c.b, 255)
             case .gradient(let inner, let outer):
-                let t = ((dist - radius) / (corner - radius)).clamped(0, 1)
+                let t = (sd / sdMax).clamped(0, 1)
                 outC = RGBA(lerp(inner.r, outer.r, t),
                             lerp(inner.g, outer.g, t),
                             lerp(inner.b, outer.b, t), 255)
             }
 
-            // Composite the disc over the corner fill by coverage.
+            // Composite the masked artwork over the outer fill by coverage.
             let aIn = Double(inC.a) / 255 * cov
             let aOut = Double(outC.a) / 255 * (1 - cov)
             let a = aIn + aOut
@@ -251,6 +253,13 @@ public func discTemplate(_ src: Raster, fill: OuterFill) -> Raster? {
         }
     }
     return dst
+}
+
+/// The disc, by its old name. Kept so the tests ported from the GTK app still
+/// exercise the path they were written against — if the generalisation above
+/// changed the disc by so much as a pixel, those tests say so.
+public func discTemplate(_ src: Raster, fill: OuterFill) -> Raster? {
+    applyMask(src, .disc, fill: fill)
 }
 
 /// The whole v1 pipeline: frame the source, then optionally disc it.

@@ -14,8 +14,16 @@ struct NCoverApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Open…") { model.open() }.keyboardShortcut("o")
             }
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") { model.undo() }
+                    .keyboardShortcut("z")
+                    .disabled(!model.canUndo)
+                Button("Redo") { model.redo() }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .disabled(!model.canRedo)
+            }
             CommandGroup(replacing: .saveItem) {
-                Button("Save as PNG…") { model.saveAs() }
+                Button("Save As…") { model.saveAs() }
                     .keyboardShortcut("s")
                     .disabled(model.preview == nil)
                 Button("Overwrite Original") { model.overwrite() }
