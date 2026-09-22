@@ -1,0 +1,68 @@
+# n.cover (macOS) — notes for Claude
+
+SwiftUI app for building cover / label artwork. Swift 6 · SwiftUI · Core
+Graphics · WebKit. See [`README.md`](README.md) for the feature tour.
+
+## This is not the GTK app, and not a port of it
+
+[`xjmzx/ncover`](https://github.com/xjmzx/ncover) is the GTK4/Linux app. This is
+a **separate app with the same name and purpose**, written natively for macOS.
+They share no code, by decision: the two are expected to develop differently,
+and a shared core is exactly the coupling that would prevent that.
+
+It is also **not part of the Tauri `n.*` suite** — no webview shell, no React,
+no Nostr surface, no keyring, no database. It is adjacent to the suite: the same
+brand and colour language, and (once batch lands) a reader of what `ndisc`
+publishes. Reaching for a suite pattern — `tauri build`, `make dev`, design
+tokens as CSS variables — will waste time here.
+
+## Build and verify
+
+```
+make app     # build n.cover.app
+make run     # build and launch
+make test    # 17 ported rule tests
+```
+
+## Traps specific to this repo
+
+- **No `.xcodeproj`, on purpose.** SwiftPM builds the binary; the Makefile
+  assembles the bundle around it. A generated `pbxproj` is neither readable nor
+  diffable. Do not "helpfully" add one.
+- **The bundle must be ad-hoc signed.** `make app` runs `codesign --sign -`. An
+  unsigned bundle has its WKWebView helper processes refused on recent macOS,
+  and the failure mode is quiet: **every SVG renders blank**, with no error.
+- **`Raster` is non-premultiplied RGBA8, and that is load-bearing.** The
+  inherited rules are defined on exact bytes. `CGBitmapContext` cannot produce
+  non-premultiplied output at all, so `Raster.load` draws into a premultiplied
+  context and un-premultiplies on the way in. Skip that and every antialiased
+  edge darkens the moment it passes through the disc mask. `CGImage` (unlike
+  `CGBitmapContext`) *does* accept non-premultiplied alpha, so the write path is
+  direct.
+- **Pixels are composed by hand, not by Core Graphics.** Nearest-neighbour
+  sampling, a one-pixel coverage ramp at the rim, and a gradient normalised to
+  the furthest pixel *centre* rather than the abstract corner. Drawing through
+  CG would add antialiasing and premultiplication we do not control and the port
+  would drift from its specification silently.
+- **SVG goes through WKWebView, and that has three consequences.** It is
+  asynchronous and main-actor bound, so a future batch must serialise through it
+  rather than fan out. It renders at the *backing scale* — ask for 1024 and a
+  Retina display returns 2048². And it is not librsvg: measured against it on
+  the suite's own Figma exports, RMSE ~1% with mean alpha agreeing to four
+  decimals, i.e. identical masks and silhouette, different antialiasing. Text-
+  heavy SVGs are the untested area, since font resolution differs.
+- **The GTK app is the oracle, not a dependency.** `Tests/NCoverKitTests` keeps
+  the original Rust test names and expected pixel values. When this app diverges
+  on purpose, **delete the test rather than weaken it** — a loosened assertion
+  hides a regression, a deleted one records a decision.
+- **Overwrite replaces the original in place**, and is one toolbar button from
+  Save. `guardOverwrite` refuses anything but a PNG, because we save PNG and
+  overwriting a JPEG under its own name would silently re-encode it. Treat any
+  change near the write path as touching user data.
+- **Output is always PNG.** Not a preference — the disc / label mask needs an
+  alpha channel.
+
+## Not here
+
+Machine-local paths, server addresses, credentials and per-box ops belong in a
+machine-local `CLAUDE.md`, never in this file. **Treat this repo as public.**
