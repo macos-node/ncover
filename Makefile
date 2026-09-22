@@ -10,7 +10,7 @@ CONFIG   = release
 BUILDDIR = .build/$(CONFIG)
 PREFIX   = $(HOME)/Applications
 
-.PHONY: all app icon run test clean install uninstall help
+.PHONY: all app icon version run test clean install uninstall help
 
 all: app
 
@@ -57,6 +57,20 @@ app: $(BUILDDIR)/ncover
 $(BUILDDIR)/ncover:
 	swift build -c $(CONFIG)
 
+## Bump the version. Two places, both in Info.plist, and it prints them.
+##
+## CFBundleVersion is a build number in Apple's model; keeping it equal to the
+## marketing version is a deliberate simplification for a tool released from
+## tags — the tag is the only identity that matters here.
+version:
+	@test -n "$(V)" || { echo "usage: make version V=x.y.z"; exit 1; }
+	@/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(V)" Resources/Info.plist
+	@/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(V)" Resources/Info.plist
+	@echo "set $(V) in Resources/Info.plist:"
+	@echo "  CFBundleShortVersionString"
+	@echo "  CFBundleVersion"
+	@echo "now: update CHANGELOG.md, commit, then 'git tag v$(V) && git push --tags'"
+
 ## Build and launch
 run: app
 	open "$(APP)"
@@ -83,6 +97,7 @@ help:
 	@echo "Available make targets:"
 	@echo "  app        - Build n.cover.app (default)"
 	@echo "  icon       - Regenerate ncover.icns from icon.svg (needs rsvg-convert)"
+	@echo "  version    - Bump the version: make version V=x.y.z"
 	@echo "  run        - Build and launch"
 	@echo "  test       - Run the ported rule tests"
 	@echo "  install    - Copy to ~/Applications"

@@ -1,0 +1,86 @@
+name: Release
+
+# Fires on any pushed tag starting with `v`, and can be kicked off manually.
+# Publishes a GitHub Release with a zipped, ad-hoc signed n.cover.app.
+#
+# One job, unlike the Tauri apps in the suite: this is a single-platform app,
+# so there is no cross-platform release-ownership dance to get right.
+#
+# WHAT THIS DOES NOT DO: notarize. The bundle is ad-hoc signed, which is enough
+# for the machine that built it and nothing else — Gatekeeper tells everyone
+# else the app is damaged. Getting past that needs a Developer ID and a
+# notarisation step, so until then the README carries the quarantine command
+# and the release notes repeat it.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS arm64
+    # Pinned, not macos-latest: the runner image decides the Swift and SDK
+    # version, and a silent bump is a silent change to what ships.
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Build the ref being released, not whatever the workflow ran from.
+          # A workflow_dispatch names the tag; checkout would otherwise default
+          # to the branch the run started on and upload main's build to that
+          # tag's release.
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Show toolchain
+        run: swift --version && xcodebuild -version
+
+      - name: Test
+        run: swift test
+
+      - name: Build the app bundle
+        run: make app
+
+      - name: Verify the bundle is signed and carries its icon
+        run: |
+          codesign --verify --verbose n.cover.app
+          test -f n.cover.app/Contents/Resources/ncover.icns
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" n.cover.app/Contents/Info.plist
+
+      - name: Zip
+        id: zip
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          name="n.cover-${tag}-macos-arm64.zip"
+          # ditto, not zip: it preserves the bundle's resource forks and, more
+          # to the point, its code signature.
+          ditto -c -k --keepParent "n.cover.app" "$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          draft: false
+          generate_release_notes: true
+          body: |
+            **Apple silicon only**, and **not notarized** — the app is ad-hoc
+            signed, so macOS will refuse it on first launch.
+
+            After unzipping:
+
+            ```bash
+            xattr -dr com.apple.quarantine /Applications/n.cover.app
+            ```
+
+            Or build it yourself: `make app`. See the README.
+          files: ${{ steps.zip.outputs.name }}

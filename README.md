@@ -8,6 +8,22 @@ sibling of [`xjmzx/ncover`](https://github.com/xjmzx/ncover), the GTK4 app for
 Linux, not a port of it. The two share a purpose and a set of rules; they are
 free to develop differently, and deliberately share no code.
 
+## Install
+
+Download the zip from [Releases](https://github.com/macos-node/ncover/releases),
+unzip, and move `n.cover.app` to `/Applications`.
+
+It is **Apple silicon only** and **not notarized** — the bundle is ad-hoc
+signed, so macOS refuses it on first launch and says the app is damaged. It is
+not. Clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/n.cover.app
+```
+
+If you would rather not do that, build it from source — the instructions below
+produce the same app, without the flag.
+
 ## Build
 
 ```
@@ -16,7 +32,11 @@ make run     # build and launch
 make test    # run the ported rule tests
 make install # copy to ~/Applications
 make icon    # regenerate ncover.icns from icon.svg (needs rsvg-convert)
+make version V=0.2.0   # bump the version before tagging
 ```
+
+Releases are cut by pushing a tag: `make version V=x.y.z`, update
+`CHANGELOG.md`, commit, then `git tag v0.2.0 && git push --tags`.
 
 Needs Xcode (Swift 6, macOS 14+ target). No `.xcodeproj` — SwiftPM builds the
 binary and the Makefile assembles the bundle.
