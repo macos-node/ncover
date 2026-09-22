@@ -56,6 +56,13 @@ backend changes.
 
 ## Traps specific to this repo
 
+- **An icon-only control keeps both a `.help()` and an `.accessibilityLabel`.**
+  Dropping the visible word is only an improvement while the meaning is still
+  recoverable; an unlabelled glyph is a puzzle. And a `systemName` that does not
+  resolve renders as **nothing at all** — silently — so new symbols get checked
+  against `NSImage(systemSymbolName:)` rather than trusted. The mask shapes use
+  symbols that *are* the shapes (`circle.fill`, `app.fill`, `octagon.fill`); a
+  chamfer really is an octagon.
 - **The backdrop is preview-only and must stay that way.** It exists so alpha
   can be judged against the background the artwork will sit on, which only
   works if it never reaches a renderer. Anything that composites it into

@@ -84,6 +84,10 @@ assertion hides a regression; a deleted one records a decision.
 The checklist above is a template — its boxes stay empty and get re-run. This is
 the record of what has actually been exercised on real files.
 
+**2026-09-23:** the mask shapes and the amount slider, the vector refusal on a
+gradient over a non-circular mask, and the backdrop (including that it stays out
+of saved files) were all exercised by hand and behave.
+
 **2026-09-22, v0.1.0, macOS 27:**
 
 - PNG and SVG both open, drag and snap as expected. The SVG case also confirms
@@ -182,6 +186,9 @@ what you did not.
 **Fit and finish**
 
 - [ ] Tooltips appear on the toolbar, the inspector controls and the canvas.
+- [ ] Every icon-only control has a tooltip, and none renders blank.
+- [ ] The mask shape icons match what the mask actually does.
+- [ ] The corner-fill swatches show the colours currently chosen.
 - [ ] Menu shortcuts work: ⌘O, ⌘S, ⇧⌘S.
 - [ ] The window resizes sensibly and the canvas stays square.
 - [ ] Errors surface as an alert with readable text.

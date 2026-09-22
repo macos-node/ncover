@@ -81,27 +81,24 @@ private struct Inspector: View {
 
             Section("Backdrop") {
                 // Preview only — never composited into anything written.
-                Picker("Behind", selection: $model.backdrop) {
-                    Text("Checker").tag(Backdrop.checker)
-                    Text("Grey").tag(Backdrop.grey)
-                    Text("Black").tag(Backdrop.black)
-                    Text("White").tag(Backdrop.white)
-                    if case .custom = model.backdrop { Text("Picked").tag(model.backdrop) }
+                LabeledContent("Behind") {
+                    HStack(spacing: 8) {
+                        BackdropRow(backdrop: $model.backdrop)
+                        Divider().frame(height: 18)
+                        Button { model.samplingBackdrop.toggle() } label: {
+                            Image(systemName: "eyedropper")
+                        }
+                        .help("Pick from the image — then click a pixel on the canvas.")
+                        .accessibilityLabel("Pick backdrop from image")
+                        Button { model.pickBackdropFromScreen() } label: {
+                            Image(systemName: "eyedropper.halffull")
+                        }
+                        .help("Pick from anywhere on screen, using the system colour sampler.")
+                        .accessibilityLabel("Pick backdrop from screen")
+                    }
+                    .buttonStyle(.borderless)
                 }
                 .help("What sits behind the artwork while you work, so alpha can be judged against a real background. Never written to the file.")
-
-                HStack {
-                    Button { model.samplingBackdrop.toggle() } label: {
-                        Label("From image", systemImage: "eyedropper")
-                    }
-                    .help("Then click a pixel on the canvas to match its colour.")
-                    Button { model.pickBackdropFromScreen() } label: {
-                        Label("From screen", systemImage: "eyedropper.halffull")
-                    }
-                    .help("The system colour sampler — pick from anywhere on screen, not just this window.")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
 
                 if model.samplingBackdrop {
                     Text("Click a pixel on the canvas…")
@@ -114,24 +111,33 @@ private struct Inspector: View {
                     .help("The mask is inscribed in the CANVAS, not fitted to the artwork — so an inset source is only clipped at its corners.")
                 if model.discOn {
                     Picker("Shape", selection: $model.maskShape) {
-                        ForEach(AppModel.MaskKind.allCases) { Text($0.label).tag($0) }
+                        ForEach(AppModel.MaskKind.allCases) { kind in
+                            Image(systemName: kind.symbol)
+                                .accessibilityLabel(kind.label)
+                                .help(kind.help)
+                                .tag(kind)
+                        }
                     }
                     .pickerStyle(.segmented)
-                    .help("Disc is a circle inscribed in the canvas. Rounded and Chamfer cut the corners by the amount below — at full amount a rounded rectangle IS the disc.")
+                    .help("Disc, rounded rectangle, or chamfer. Rounded and chamfer cut corners by the amount below — at 100% a rounded rectangle IS the disc.")
 
                     if model.maskHasAmount {
-                        HStack {
-                            Text("Amount")
-                            Slider(value: $model.maskAmount, in: 0...1)
-                            Text(String(format: "%.0f%%", model.maskAmount * 100))
-                                .monospacedDigit().foregroundStyle(.secondary)
-                                .frame(width: 44, alignment: .trailing)
+                        LabeledContent("Amount") {
+                            HStack(spacing: 8) {
+                                Slider(value: $model.maskAmount, in: 0...1)
+                                Text(String(format: "%.0f%%", model.maskAmount * 100))
+                                    .monospacedDigit().foregroundStyle(.secondary)
+                                    .frame(width: 38, alignment: .trailing)
+                            }
                         }
                         .help("How much corner goes, as a fraction of half the canvas.")
                     }
 
-                    Picker("Corners", selection: $model.fillKind) {
-                        ForEach(AppModel.FillKind.allCases) { Text($0.label).tag($0) }
+                    LabeledContent("Corners") {
+                        FillRow(kind: $model.fillKind,
+                                solid: model.solid,
+                                gradInner: model.gradInner,
+                                gradOuter: model.gradOuter)
                     }
                     .help("What sits outside the mask. Transparent is the honest default for artwork that will sit on an unknown background.")
                     switch model.fillKind {
