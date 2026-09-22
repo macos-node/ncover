@@ -109,6 +109,16 @@ backend changes.
   can be judged against the background the artwork will sit on, which only
   works if it never reaches a renderer. Anything that composites it into
   `renderRaster` or `renderVector` is a data bug, not a feature.
+- **A mask is inscribed in a `MaskRegion`, not in the canvas.** `.canvas` is
+  the inherited behaviour and the surprising one — a source that does not reach
+  the canvas edges is only clipped at its corners. `.artwork` inscribes it in
+  the square bounding whatever is *currently drawn*, which is computed from the
+  canvas **at that point in the operation list**, not from the source and not
+  from the placement. The vector backend has to ask the raster fold for the
+  same answer, which is why it renders the prefix of the list; export is not a
+  hot path and correctness beats inferring bounds from geometry.
+  With an off-centre region the four canvas corners stop being equivalent, so
+  the gradient normalisation takes the largest rather than assuming symmetry.
 - **A gradient fill has no vector form on a non-circular mask**, and
   `hasVectorForm` says so. An SVG `radialGradient` follows the rim only when
   the rim is a circle; the raster backend's ramp is distance-field based and

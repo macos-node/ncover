@@ -123,13 +123,69 @@ public enum Mask: Equatable, Sendable {
     }
 }
 
+/// What the mask is sized and centred on.
+public enum MaskFit: String, Equatable, Sendable, CaseIterable {
+    /// Inscribed in the canvas. A source that does not reach the canvas edges
+    /// is then only clipped at its corners — correct, and not what most people
+    /// expect the first time.
+    case canvas
+    /// Inscribed in the square that bounds whatever is actually drawn. A disc
+    /// over an inset icon becomes a disc *of the icon*.
+    case artwork
+
+    public var label: String { self == .canvas ? "Canvas" : "Artwork" }
+}
+
+/// The square a mask is inscribed in: centre, and side.
+public struct MaskRegion: Equatable, Sendable {
+    public var cx: Double, cy: Double, side: Double
+    public init(cx: Double, cy: Double, side: Double) {
+        self.cx = cx; self.cy = cy; self.side = side
+    }
+
+    public static func canvas(_ size: Int) -> MaskRegion {
+        MaskRegion(cx: Double(size) / 2, cy: Double(size) / 2, side: Double(size))
+    }
+}
+
+extension Raster {
+    /// Alpha at or below this counts as nothing drawn. Not zero: an antialiased
+    /// edge or a faint glow would otherwise stretch the bounds to the whole
+    /// canvas and make "fit to artwork" mean nothing.
+    public static let drawnAlphaFloor: UInt8 = 8
+
+    /// The square bounding whatever is drawn, centred on the drawn content.
+    ///
+    /// A square rather than the raw rectangle because the masks are inscribed
+    /// in squares — and the side is the *larger* dimension, so the mask reaches
+    /// the artwork's widest extent rather than cutting into it.
+    /// `nil` when nothing is drawn at all.
+    public func drawnRegion() -> MaskRegion? {
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            let row = y * width * 4
+            for x in 0..<width where px[row + x * 4 + 3] > Raster.drawnAlphaFloor {
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        let w = Double(maxX - minX + 1), h = Double(maxY - minY + 1)
+        return MaskRegion(cx: Double(minX) + w / 2,
+                          cy: Double(minY) + h / 2,
+                          side: max(w, h))
+    }
+}
+
 // MARK: - operations
 
 public enum Operation: Equatable, Sendable {
     /// Draw the source onto the canvas at this placement.
     case place(Placement)
     /// Mask what is on the canvas, filling outside it.
-    case mask(Mask, fill: OuterFill)
+    case mask(Mask, fill: OuterFill, fit: MaskFit)
     /// Invert RGB, leaving alpha alone.
     case invert
 
@@ -140,7 +196,7 @@ public enum Operation: Equatable, Sendable {
         switch self {
         case .place:
             return true                            // a transform
-        case .mask(let m, let fill):
+        case .mask(let m, let fill, _):
             // A clipPath, plus an inverse-clipped fill. With one honest
             // exception: the corner gradient is a *radial* gradient, which can
             // only follow the shape when the shape is a circle. For a rounded
@@ -157,7 +213,8 @@ public enum Operation: Equatable, Sendable {
     public var label: String {
         switch self {
         case .place:            return "Place"
-        case .mask(let m, _):   return m.label + " mask"
+        case .mask(let m, _, let fit):
+            return m.label + " mask" + (fit == .artwork ? " (artwork)" : "")
         case .invert:           return "Invert"
         }
     }
@@ -212,8 +269,14 @@ public func renderRaster(_ doc: Composition) -> Raster {
         switch op {
         case .place(let p):
             canvasRaster = compose(doc.source.raster, p, canvas: doc.canvas)
-        case .mask(let m, let fill):
-            canvasRaster = applyMask(canvasRaster, m, fill: fill) ?? canvasRaster
+        case .mask(let m, let fill, let fit):
+            // Fitting to the artwork means asking what is currently drawn, so
+            // the region is computed from the canvas as it stands at this point
+            // in the list — not from the source, and not from the whole canvas.
+            let region: MaskRegion = fit == .artwork
+                ? (canvasRaster.drawnRegion() ?? .canvas(doc.canvas))
+                : .canvas(doc.canvas)
+            canvasRaster = applyMask(canvasRaster, m, fill: fill, region: region) ?? canvasRaster
         case .invert:
             canvasRaster = invertRGB(canvasRaster)
         }

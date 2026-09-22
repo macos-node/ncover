@@ -197,7 +197,8 @@ public func invertRGB(_ src: Raster) -> Raster {
 /// The source is scaled to COVER the square (never letterboxed — a disc with
 /// bars through it is not a disc), and the rim is antialiased over one pixel so
 /// the edge does not read as a staircase.
-public func applyMask(_ src: Raster, _ mask: Mask, fill: OuterFill) -> Raster? {
+public func applyMask(_ src: Raster, _ mask: Mask, fill: OuterFill,
+                      region: MaskRegion? = nil) -> Raster? {
     let sw = src.width, sh = src.height
     guard sw > 0, sh > 0 else { return nil }
 
@@ -208,19 +209,36 @@ public func applyMask(_ src: Raster, _ mask: Mask, fill: OuterFill) -> Raster? {
     let cx = fsize / 2, cy = fsize / 2
     // Cover: the smaller source axis must reach across the square.
     let scale = fsize / Double(min(sw, sh))
+
+    // The square the mask is inscribed in. Defaults to the whole canvas; a
+    // region fitted to the drawn content puts the mask on the artwork instead.
+    let r = region ?? .canvas(size)
+    // Evaluate the shape in its own frame, so the distance functions stay
+    // written as "inscribed in a square of side `size`" and know nothing about
+    // where that square sits.
+    func sd(_ x: Double, _ y: Double) -> Double {
+        mask.signedDistance(x: x - r.cx + r.side / 2,
+                            y: y - r.cy + r.side / 2,
+                            size: r.side)
+    }
+
     // Normalise the gradient to the furthest PIXEL CENTRE, not to the abstract
     // corner. A pixel's centre is half a pixel inside the corner, so
     // normalising to the corner leaves the corner pixel short of the outer stop
     // (94.7% on a 64px canvas — ask for black->white and the corner comes out
     // #F1F1F1). The furthest thing actually drawn should reach the end of the ramp.
-    let sdMax = mask.maxSignedDistance(size: fsize)
+    //
+    // With an off-centre region the four corners are no longer equivalent, so
+    // take the largest rather than assuming symmetry.
+    let sdMax = [ (0.5, 0.5), (fsize - 0.5, 0.5), (0.5, fsize - 0.5), (fsize - 0.5, fsize - 0.5) ]
+        .map { sd($0.0, $0.1) }.max() ?? 1
 
     for y in 0..<size {
         for x in 0..<size {
-            let sd = mask.signedDistance(x: Double(x) + 0.5, y: Double(y) + 0.5, size: fsize)
+            let d = sd(Double(x) + 0.5, Double(y) + 0.5)
 
             // Coverage: 1 inside, 0 outside, ramped across the last pixel.
-            let cov = (0.5 - sd).clamped(0, 1)
+            let cov = (0.5 - d).clamped(0, 1)
 
             // Source pixel under this destination pixel (cover-scaled, centred).
             let sx = Int(((Double(x) - cx) / scale + Double(sw) / 2).rounded(.down))
@@ -233,7 +251,7 @@ public func applyMask(_ src: Raster, _ mask: Mask, fill: OuterFill) -> Raster? {
             case .white:        outC = RGBA(255, 255, 255, 255)
             case .solid(let c): outC = RGBA(c.r, c.g, c.b, 255)
             case .gradient(let inner, let outer):
-                let t = (sd / sdMax).clamped(0, 1)
+                let t = (d / sdMax).clamped(0, 1)
                 outC = RGBA(lerp(inner.r, outer.r, t),
                             lerp(inner.g, outer.g, t),
                             lerp(inner.b, outer.b, t), 255)

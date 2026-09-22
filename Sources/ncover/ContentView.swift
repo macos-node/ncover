@@ -119,7 +119,7 @@ private struct Inspector: View {
 
             Section("Mask") {
                 Toggle("Mask", isOn: $model.discOn)
-                    .tip("The mask is inscribed in the CANVAS, not fitted to the artwork — so an inset source is only clipped at its corners.")
+                    .tip("Mask the artwork to a shape, filling outside it.")
                 if model.discOn {
                     Picker("Shape", selection: $model.maskShape) {
                         ForEach(AppModel.MaskKind.allCases) { kind in
@@ -130,6 +130,17 @@ private struct Inspector: View {
                     }
                     .pickerStyle(.segmented)
                     .tip("Disc, rounded rectangle, or chamfer. Rounded and chamfer cut corners by the amount below — at 100% a rounded rectangle IS the disc.")
+
+                    Picker("Fit to", selection: $model.maskFit) {
+                        ForEach(MaskFit.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .tip("""
+                        Canvas inscribes the mask in the square you are exporting, so \
+                        a source that does not reach the edges is only clipped at its \
+                        corners. Artwork inscribes it in whatever is actually drawn, \
+                        so an inset image gets a mask of itself.
+                        """)
 
                     if model.maskHasAmount {
                         LabeledContent("Amount") {

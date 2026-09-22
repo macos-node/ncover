@@ -10,18 +10,22 @@ import Foundation
 
 extension Mask {
     /// The clip shape itself.
-    func svgClipShape(size s: Double) -> String {
+    /// The clip shape, placed in its region rather than assumed to fill the
+    /// canvas — that is what lets the mask be fitted to the artwork.
+    func svgClipShape(region reg: MaskRegion) -> String {
+        let s = reg.side
+        let ox = reg.cx - s / 2, oy = reg.cy - s / 2
         switch self {
         case .disc:
-            return #"<circle cx="\#(f(s / 2))" cy="\#(f(s / 2))" r="\#(f(s / 2))"/>"#
+            return #"<circle cx="\#(f(reg.cx))" cy="\#(f(reg.cy))" r="\#(f(s / 2))"/>"#
         case .roundedRect(let frac):
             let r = max(0, min(1, frac)) * s / 2
-            return #"<rect width="\#(f(s))" height="\#(f(s))" rx="\#(f(r))" ry="\#(f(r))"/>"#
+            return #"<rect x="\#(f(ox))" y="\#(f(oy))" width="\#(f(s))" height="\#(f(s))" rx="\#(f(r))" ry="\#(f(r))"/>"#
         case .chamfer(let frac):
             let i = max(0, min(1, frac)) * s / 2
             let pts = [(i, 0.0), (s - i, 0.0), (s, i), (s, s - i),
                        (s - i, s), (i, s), (0.0, s - i), (0.0, i)]
-                .map { "\(f($0.0)),\(f($0.1))" }.joined(separator: " ")
+                .map { "\(f(ox + $0.0)),\(f(oy + $0.1))" }.joined(separator: " ")
             return #"<polygon points="\#(pts)"/>"#
         }
     }
@@ -34,24 +38,27 @@ extension Mask {
     /// transparent pixel *inside* the shape, which is a different picture. In
     /// the raster backend the `(1 - coverage)` term says this implicitly; in
     /// vector it has to be said out loud.
-    func svgInverseClipPath(size s: Double) -> String {
-        let outer = #"M0,0 H\#(f(s)) V\#(f(s)) H0 Z "#
+    func svgInverseClipPath(canvas c: Double, region reg: MaskRegion) -> String {
+        let s = reg.side
+        let ox = reg.cx - s / 2, oy = reg.cy - s / 2
+        // The outer subpath is always the whole canvas; only the hole moves.
+        let outer = #"M0,0 H\#(f(c)) V\#(f(c)) H0 Z "#
         let inner: String
         switch self {
         case .disc:
-            let r = s / 2, c = s / 2
-            inner = #"M\#(f(c)),\#(f(c - r)) A\#(f(r)),\#(f(r)) 0 1,0 \#(f(c)),\#(f(c + r)) "# +
-                    #"A\#(f(r)),\#(f(r)) 0 1,0 \#(f(c)),\#(f(c - r)) Z"#
+            let r = s / 2
+            inner = #"M\#(f(reg.cx)),\#(f(reg.cy - r)) A\#(f(r)),\#(f(r)) 0 1,0 \#(f(reg.cx)),\#(f(reg.cy + r)) "# +
+                    #"A\#(f(r)),\#(f(r)) 0 1,0 \#(f(reg.cx)),\#(f(reg.cy - r)) Z"#
         case .roundedRect(let frac):
             let r = max(0, min(1, frac)) * s / 2
-            inner = #"M\#(f(r)),0 H\#(f(s - r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(s)),\#(f(r)) "# +
-                    #"V\#(f(s - r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(s - r)),\#(f(s)) "# +
-                    #"H\#(f(r)) A\#(f(r)),\#(f(r)) 0 0,1 0,\#(f(s - r)) "# +
-                    #"V\#(f(r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(r)),0 Z"#
+            inner = #"M\#(f(ox + r)),\#(f(oy)) H\#(f(ox + s - r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(ox + s)),\#(f(oy + r)) "# +
+                    #"V\#(f(oy + s - r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(ox + s - r)),\#(f(oy + s)) "# +
+                    #"H\#(f(ox + r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(ox)),\#(f(oy + s - r)) "# +
+                    #"V\#(f(oy + r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(ox + r)),\#(f(oy)) Z"#
         case .chamfer(let frac):
             let i = max(0, min(1, frac)) * s / 2
-            inner = #"M\#(f(i)),0 H\#(f(s - i)) L\#(f(s)),\#(f(i)) V\#(f(s - i)) "# +
-                    #"L\#(f(s - i)),\#(f(s)) H\#(f(i)) L0,\#(f(s - i)) V\#(f(i)) Z"#
+            inner = #"M\#(f(ox + i)),\#(f(oy)) H\#(f(ox + s - i)) L\#(f(ox + s)),\#(f(oy + i)) V\#(f(oy + s - i)) "# +
+                    #"L\#(f(ox + s - i)),\#(f(oy + s)) H\#(f(ox + i)) L\#(f(ox)),\#(f(oy + s - i)) V\#(f(oy + i)) Z"#
         }
         return #"<path clip-rule="evenodd" d="\#(outer)\#(inner)"/>"#
     }
@@ -63,12 +70,17 @@ extension Mask {
     /// Only meaningful for `.disc`: a radial gradient follows the rim only when
     /// the rim is a circle. `Operation.hasVectorForm` refuses the other
     /// combinations rather than exporting a near-miss.
-    func gradientOuterRadius(size: Double) -> Double {
-        maxSignedDistance(size: size) + size / 2
+    /// Distance from the region's centre to the furthest canvas pixel centre,
+    /// so both backends reach the outer stop in the same place even when the
+    /// region is off-centre.
+    func gradientOuterRadius(canvas c: Double, region reg: MaskRegion) -> Double {
+        [(0.5, 0.5), (c - 0.5, 0.5), (0.5, c - 0.5), (c - 0.5, c - 0.5)]
+            .map { (($0.0 - reg.cx) * ($0.0 - reg.cx) + ($0.1 - reg.cy) * ($0.1 - reg.cy)).squareRoot() }
+            .max() ?? (c / 2)
     }
 
-    func gradientInnerOffset(size: Double) -> Double {
-        (size / 2) / gradientOuterRadius(size: size)
+    func gradientInnerOffset(canvas c: Double, region reg: MaskRegion) -> Double {
+        (reg.side / 2) / gradientOuterRadius(canvas: c, region: reg)
     }
 }
 
@@ -94,9 +106,21 @@ public func renderVector(_ doc: Composition) -> String? {
             let h = p.h(doc.source.raster.height)
             body += vec.nested(x: p.dx, y: p.dy, width: w, height: h)
 
-        case .mask(let m, let fill):
+        case .mask(let m, let fill, let fit):
+            // Fitting to the artwork needs to know what is drawn, which only
+            // the raster fold can answer — so ask it, for the operations up to
+            // this one. Export is not a hot path and correctness beats guessing
+            // the bounds from the placement.
+            let reg: MaskRegion
+            if fit == .artwork {
+                var prefix = doc
+                prefix.ops = Array(doc.ops.prefix(i))
+                reg = renderRaster(prefix).drawnRegion() ?? .canvas(doc.canvas)
+            } else {
+                reg = .canvas(doc.canvas)
+            }
             let clipID = "mask\(i)", outID = "outside\(i)"
-            defs.append("<clipPath id=\"\(clipID)\">\(m.svgClipShape(size: c))</clipPath>")
+            defs.append("<clipPath id=\"\(clipID)\">\(m.svgClipShape(region: reg))</clipPath>")
 
             var layer = ""
             switch fill {
@@ -104,15 +128,15 @@ public func renderVector(_ doc: Composition) -> String? {
                 layer = ""                       // nothing outside; that is the point
             case .white, .solid:
                 let col = { if case .solid(let s) = fill { return hex(s) }; return "#ffffff" }()
-                defs.append("<clipPath id=\"\(outID)\">\(m.svgInverseClipPath(size: c))</clipPath>")
+                defs.append("<clipPath id=\"\(outID)\">\(m.svgInverseClipPath(canvas: c, region: reg))</clipPath>")
                 layer = #"<g clip-path="url(#\#(outID))"><rect width="\#(f(c))" height="\#(f(c))" fill="\#(col)"/></g>"#
             case .gradient(let inner, let outer):
                 let gID = "grad\(i)"
-                defs.append("<clipPath id=\"\(outID)\">\(m.svgInverseClipPath(size: c))</clipPath>")
+                defs.append("<clipPath id=\"\(outID)\">\(m.svgInverseClipPath(canvas: c, region: reg))</clipPath>")
                 defs.append(
                     #"<radialGradient id="\#(gID)" gradientUnits="userSpaceOnUse" "# +
-                    #"cx="\#(f(c / 2))" cy="\#(f(c / 2))" r="\#(f(m.gradientOuterRadius(size: c)))">"# +
-                    #"<stop offset="\#(f(m.gradientInnerOffset(size: c)))" stop-color="\#(hex(inner))"/>"# +
+                    #"cx="\#(f(reg.cx))" cy="\#(f(reg.cy))" r="\#(f(m.gradientOuterRadius(canvas: c, region: reg)))">"# +
+                    #"<stop offset="\#(f(m.gradientInnerOffset(canvas: c, region: reg)))" stop-color="\#(hex(inner))"/>"# +
                     #"<stop offset="1" stop-color="\#(hex(outer))"/></radialGradient>"#)
                 layer = #"<g clip-path="url(#\#(outID))"><rect width="\#(f(c))" height="\#(f(c))" fill="url(#\#(gID))"/></g>"#
             }

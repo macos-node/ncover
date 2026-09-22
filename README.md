@@ -45,7 +45,10 @@ Undo is a stack of compositions, so no operation needs its own inverse.
 - **Cover** or **Fit** framing. Changing the canvas size rescales the framing
   rather than re-cropping it.
 - A **mask** — disc, rounded rectangle or chamfer, the latter two with an
-  adjustable amount. At full amount a rounded rectangle *is* the disc, so the
+  adjustable amount — inscribed either in the **canvas** or in the **artwork's**
+  own bounds. The latter matters for a source that does not reach the canvas
+  edges: inscribed in the canvas it is only clipped at its corners, inscribed in
+  the artwork it becomes a mask *of the artwork*. At full amount a rounded rectangle *is* the disc, so the
   control runs continuously from square to circle. Corners can be left
   transparent, filled white, filled with a colour, or run as a radial gradient
   from the rim outward.
@@ -120,14 +123,18 @@ of saved files) were all exercised by hand and behave.
 - JPEG and WebP sources; a corrupt file producing a readable error.
 - Menu shortcuts, tooltips, window resize.
 
-### A thing worth knowing about the disc
+### A thing worth knowing about the mask
 
-The disc is inscribed in the **canvas**, not fitted to the artwork. Give it a
-source that does not fill the canvas — an icon with a grid margin, anything
-placed with Fit — and the circle only grazes the artwork's four corners, which
-reads as a shallow 45° chamfer rather than a record. That is correct behaviour
-and measurably a circle; it just is not what the eye expects. For the classic
-disc, the source has to reach the canvas edges.
+By default a mask is inscribed in the **canvas**. Give it a source that does not
+fill the canvas — an icon with a grid margin, anything placed with Fit — and the
+shape only grazes the artwork's four corners, which reads as a shallow chamfer
+rather than a record. That is correct, and measurably a circle; it just is not
+what the eye expects.
+
+**Fit to Artwork** is the answer: it inscribes the mask in the square bounding
+whatever is actually drawn. On the suite's own icon, whose art fills 80.5% of
+its tile, that is a region of 322px on a 400px canvas — and the result is a disc
+of the icon rather than a barely-nicked square.
 
 ### Manual checklist
 
@@ -163,6 +170,10 @@ what you did not.
 
 - [ ] The mask is a circle inscribed in the square, and clips the corners.
 - [ ] Rounded and chamfer shapes clip as expected, and the amount slider moves them.
+- [ ] Fit to Artwork on an inset source produces a mask of the artwork, not of
+      the canvas; Fit to Canvas restores the old behaviour.
+- [ ] With Fit to Artwork and a gradient fill, the ramp still reaches its outer
+      colour at the furthest canvas corner.
 - [ ] A rounded mask at 100% is indistinguishable from the disc.
 - [ ] With a gradient fill on a rounded or chamfer mask, the inspector says SVG
       is unavailable and names the step.

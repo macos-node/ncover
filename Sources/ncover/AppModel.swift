@@ -35,6 +35,9 @@ final class AppModel: ObservableObject {
     /// Corner radius / chamfer inset, as a fraction of half the canvas. One
     /// control for both because they mean the same thing: how much corner goes.
     @Published var maskAmount: Double = 0.35   { didSet { rebuild() } }
+    /// Whether the mask is inscribed in the canvas or in the artwork's own
+    /// bounds. Canvas is the inherited behaviour and the surprising one.
+    @Published var maskFit: MaskFit = .canvas  { didSet { rebuild() } }
 
     enum MaskKind: String, CaseIterable, Identifiable {
         case disc, rounded, chamfer
@@ -178,9 +181,13 @@ final class AppModel: ObservableObject {
         guard let d = doc else { return }
         var found: OuterFill?
         var foundShape: Mask?
-        for case .mask(let m, let fill) in d.ops { found = fill; foundShape = m }
+        var foundFit: MaskFit?
+        for case .mask(let m, let fill, let fit) in d.ops {
+            found = fill; foundShape = m; foundFit = fit
+        }
         withControlsSilenced {
             discOn = found != nil
+            if let f = foundFit { maskFit = f }
             switch foundShape {
             case .disc?:                   maskShape = .disc
             case .roundedRect(let r)?:     maskShape = .rounded; maskAmount = r
@@ -209,9 +216,10 @@ final class AppModel: ObservableObject {
         let fill = outerFill
         let on = discOn
         let shape = mask
+        let fit = maskFit
         mutate { doc in
             doc.ops.removeAll { if case .mask = $0 { return true }; return false }
-            if on { doc.ops.append(.mask(shape, fill: fill)) }
+            if on { doc.ops.append(.mask(shape, fill: fill, fit: fit)) }
         }
     }
 

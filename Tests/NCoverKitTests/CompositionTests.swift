@@ -55,7 +55,7 @@ struct VectorTests {
     @Test func aVectorSourceWithVectorOperationsIsAccepted() throws {
         var d = vectorDoc()
         d.setPlacement(Placement(dx: 0, dy: 0, scale: 4))
-        d.ops.append(.mask(.disc, fill: .alpha))
+        d.ops.append(.mask(.disc, fill: .alpha, fit: .canvas))
         #expect(d.vectorRefusal == nil)
         let svg = try #require(renderVector(d))
         #expect(svg.contains("<clipPath id=\"mask1\">"))
@@ -65,7 +65,7 @@ struct VectorTests {
     @Test func aTransparentFillWritesNoOuterLayerAtAll() {
         var d = vectorDoc()
         d.setPlacement(Placement(dx: 0, dy: 0, scale: 4))
-        d.ops.append(.mask(.disc, fill: .alpha))
+        d.ops.append(.mask(.disc, fill: .alpha, fit: .canvas))
         let svg = renderVector(d) ?? ""
         #expect(!svg.contains("outside1"), "nothing outside the disc means no fill layer")
     }
@@ -76,7 +76,7 @@ struct VectorTests {
     @Test func anOuterFillIsClippedToTheInverseOfTheMask() {
         var d = vectorDoc()
         d.setPlacement(Placement(dx: 0, dy: 0, scale: 4))
-        d.ops.append(.mask(.disc, fill: .white))
+        d.ops.append(.mask(.disc, fill: .white, fit: .canvas))
         let svg = renderVector(d) ?? ""
         #expect(svg.contains("clip-rule=\"evenodd\""))
         #expect(svg.contains("clip-path=\"url(#outside1)\""))
@@ -88,11 +88,12 @@ struct VectorTests {
         let size = 400.0
         let m = Mask.disc
         // raster: t = sd / sdMax, so t = 0 exactly at the rim
+        let reg = MaskRegion.canvas(Int(size))
         let sdMax = m.maxSignedDistance(size: size)
         let rimT = m.signedDistance(x: size / 2, y: 0.5 + 0, size: size) / sdMax
         // vector: the inner stop offset, expressed as a fraction of the gradient radius
-        let innerOffset = m.gradientInnerOffset(size: size)
-        let outer = m.gradientOuterRadius(size: size)
+        let innerOffset = m.gradientInnerOffset(canvas: size, region: reg)
+        let outer = m.gradientOuterRadius(canvas: size, region: reg)
         // The rim sits at radius size/2 along a gradient of radius `outer`.
         #expect(abs(innerOffset - (size / 2) / outer) < 1e-12)
         #expect(abs(rimT) < 0.01, "the rim is the zero point of the raster ramp")
@@ -107,7 +108,7 @@ struct VectorTests {
         let allVector = d.ops.allSatisfy { $0.hasVectorForm }
         #expect(allVector)
         #expect(d.vectorRefusal == nil)
-        #expect(Operation.mask(.disc, fill: .alpha).label == "Disc mask")
+        #expect(Operation.mask(.disc, fill: .alpha, fit: .canvas).label == "Disc mask")
     }
 }
 
@@ -154,14 +155,14 @@ struct MaskShapeTests {
     /// rim when the rim is a circle, so the non-disc combinations refuse vector
     /// export instead of writing a picture that does not match the screen.
     @Test func aGradientOnANonCircularMaskHasNoVectorForm() {
-        #expect(Operation.mask(.disc, fill: .gradient(inner: .black, outer: .white)).hasVectorForm)
+        #expect(Operation.mask(.disc, fill: .gradient(inner: .black, outer: .white), fit: .canvas).hasVectorForm)
         #expect(!Operation.mask(.roundedRect(radius: 0.4),
-                                fill: .gradient(inner: .black, outer: .white)).hasVectorForm)
+                                fill: .gradient(inner: .black, outer: .white), fit: .canvas).hasVectorForm)
         #expect(!Operation.mask(.chamfer(inset: 0.3),
-                                fill: .gradient(inner: .black, outer: .white)).hasVectorForm)
+                                fill: .gradient(inner: .black, outer: .white), fit: .canvas).hasVectorForm)
         // Every other fill is fine on every shape.
-        #expect(Operation.mask(.chamfer(inset: 0.3), fill: .white).hasVectorForm)
-        #expect(Operation.mask(.roundedRect(radius: 0.4), fill: .alpha).hasVectorForm)
+        #expect(Operation.mask(.chamfer(inset: 0.3), fill: .white, fit: .canvas).hasVectorForm)
+        #expect(Operation.mask(.roundedRect(radius: 0.4), fill: .alpha, fit: .canvas).hasVectorForm)
     }
 
     @Test func theRefusalNamesTheStep() {
@@ -169,7 +170,7 @@ struct MaskShapeTests {
                                            vector: VectorSource(svg: "<svg/>", width: 8, height: 8)),
                             canvas: 400)
         c.setPlacement(Placement(dx: 0, dy: 0, scale: 1))
-        c.ops.append(.mask(.chamfer(inset: 0.3), fill: .gradient(inner: .black, outer: .white)))
+        c.ops.append(.mask(.chamfer(inset: 0.3), fill: .gradient(inner: .black, outer: .white), fit: .canvas))
         #expect(c.vectorRefusal == "step 2, Chamfer mask, has no vector form")
         #expect(renderVector(c) == nil)
     }
@@ -179,10 +180,93 @@ struct MaskShapeTests {
             (.disc, "circle"), (.roundedRect(radius: 0.4), "rect"), (.chamfer(inset: 0.3), "polygon"),
         ]
         for (m, tag) in shapes {
-            #expect(m.svgClipShape(size: 400).contains("<\(tag)"), "\(m.label) clip shape")
-            let inv = m.svgInverseClipPath(size: 400)
+            let reg = MaskRegion.canvas(400)
+            #expect(m.svgClipShape(region: reg).contains("<\(tag)"), "\(m.label) clip shape")
+            let inv = m.svgInverseClipPath(canvas: 400, region: reg)
             #expect(inv.contains("clip-rule=\"evenodd\""), "\(m.label) inverse must be even-odd")
             #expect(inv.contains("M0,0 H400 V400 H0 Z"), "\(m.label) inverse starts from the canvas")
         }
+    }
+}
+
+@Suite("mask fit")
+struct MaskFitTests {
+    /// A 40×40 opaque square centred in a 100×100 canvas — the inset-artwork
+    /// case, in miniature.
+    private func insetArtwork() -> Raster {
+        var r = Raster(empty: 100, height: 100)
+        for y in 30..<70 { for x in 30..<70 { r.set(x, y, RGBA(255, 0, 0, 255)) } }
+        return r
+    }
+
+    @Test func theDrawnRegionFindsTheArtworkNotTheCanvas() throws {
+        let reg = try #require(insetArtwork().drawnRegion())
+        #expect(reg.cx == 50 && reg.cy == 50)
+        #expect(reg.side == 40)
+    }
+
+    @Test func nothingDrawnHasNoRegion() {
+        #expect(Raster(empty: 20, height: 20).drawnRegion() == nil)
+    }
+
+    /// The whole point of the toggle. Inscribed in the canvas, a disc of radius
+    /// 50 barely grazes a 40×40 inset square — its corners sit 28 from centre,
+    /// well inside. Inscribed in the artwork, radius 20, it cuts them off.
+    @Test func fittingToTheArtworkActuallyClipsIt() throws {
+        let src = insetArtwork()
+        let onCanvas = try #require(applyMask(src, .disc, fill: .alpha, region: .canvas(100)))
+        let onArtwork = try #require(applyMask(src, .disc, fill: .alpha, region: src.drawnRegion()!))
+        // The artwork's own corner, just inside its bounding box.
+        #expect(onCanvas.sample(31, 31).a == 255, "canvas-inscribed disc leaves it alone")
+        #expect(onArtwork.sample(31, 31).a == 0, "artwork-inscribed disc cuts the corner")
+        // Both keep the centre.
+        #expect(onCanvas.sample(50, 50) == RGBA(255, 0, 0, 255))
+        #expect(onArtwork.sample(50, 50) == RGBA(255, 0, 0, 255))
+    }
+
+    @Test func anOffCentreRegionStillNormalisesTheGradientToTheFurthestCorner() {
+        // A region in one corner: the far canvas corner must still reach the
+        // outer stop, which a symmetric assumption would get wrong.
+        let reg = MaskRegion(cx: 20, cy: 20, side: 20)
+        let r = Mask.disc.gradientOuterRadius(canvas: 100, region: reg)
+        let farCorner = ((99.5 - 20) * (99.5 - 20) * 2).squareRoot()
+        #expect(abs(r - farCorner) < 1e-9)
+    }
+
+    @Test func theFitIsCarriedThroughTheCompositionAndNamed() {
+        var c = Composition(source: Source(raster: insetArtwork()), canvas: 100)
+        c.setPlacement(Placement(dx: 0, dy: 0, scale: 1))
+        c.ops.append(.mask(.disc, fill: .alpha, fit: .artwork))
+        #expect(c.ops[1].label == "Disc mask (artwork)")
+        // Rendering through the composition must match applying it directly.
+        let viaComposition = renderRaster(c)
+        #expect(viaComposition.sample(31, 31).a == 0)
+    }
+
+    @Test func bothFitsStillExportAsVector() throws {
+        for fit in MaskFit.allCases {
+            var c = Composition(
+                source: Source(raster: insetArtwork(),
+                               vector: VectorSource(svg: "<svg/>", width: 100, height: 100)),
+                canvas: 100)
+            c.setPlacement(Placement(dx: 0, dy: 0, scale: 1))
+            c.ops.append(.mask(.disc, fill: .white, fit: fit))
+            #expect(c.vectorRefusal == nil, "\(fit.label) should export")
+            let svg = try #require(renderVector(c))
+            #expect(svg.contains("<circle"))
+        }
+    }
+
+    /// The artwork-fitted circle must actually be drawn where the artwork is,
+    /// not at the canvas centre with the canvas radius.
+    @Test func theVectorCircleFollowsTheRegion() throws {
+        var c = Composition(
+            source: Source(raster: insetArtwork(),
+                           vector: VectorSource(svg: "<svg/>", width: 100, height: 100)),
+            canvas: 100)
+        c.setPlacement(Placement(dx: 0, dy: 0, scale: 1))
+        c.ops.append(.mask(.disc, fill: .white, fit: .artwork))
+        let svg = try #require(renderVector(c))
+        #expect(svg.contains(#"r="20""#), "radius should be the artwork's, not the canvas's")
     }
 }
