@@ -110,3 +110,79 @@ struct VectorTests {
         #expect(Operation.mask(.disc, fill: .alpha).label == "Disc mask")
     }
 }
+
+@Suite("mask shapes")
+struct MaskShapeTests {
+    /// A rounded rectangle whose corner radius is the full half-canvas IS a
+    /// circle. If the two distance functions ever disagree about that, one of
+    /// them is wrong.
+    @Test func aFullyRoundedRectangleIsTheDisc() {
+        let size = 128.0
+        for (x, y) in [(0.5, 0.5), (64.0, 0.5), (64.0, 64.0), (20.0, 100.0), (127.5, 127.5)] {
+            let a = Mask.disc.signedDistance(x: x, y: y, size: size)
+            let b = Mask.roundedRect(radius: 1.0).signedDistance(x: x, y: y, size: size)
+            #expect(abs(a - b) < 1e-9, "disagreed at \(x),\(y): \(a) vs \(b)")
+        }
+    }
+
+    @Test func aZeroRadiusRectangleKeepsItsCorners() {
+        let m = Mask.roundedRect(radius: 0)
+        // The corner pixel centre is inside a plain square, unlike a disc.
+        #expect(m.signedDistance(x: 0.5, y: 0.5, size: 128) < 0)
+        #expect(Mask.disc.signedDistance(x: 0.5, y: 0.5, size: 128) > 0)
+    }
+
+    @Test func aChamferCutsCornersButNotEdges() {
+        let m = Mask.chamfer(inset: 0.3)
+        // Mid-edge is untouched by a chamfer...
+        #expect(m.signedDistance(x: 64, y: 0.5, size: 128) < 0)
+        // ...while the corner is outside.
+        #expect(m.signedDistance(x: 0.5, y: 0.5, size: 128) > 0)
+    }
+
+    @Test func everyShapeMasksWithoutComplaint() throws {
+        var red = Raster(empty: 64, height: 64)
+        for i in stride(from: 0, to: red.px.count, by: 4) { red.px[i] = 255; red.px[i + 3] = 255 }
+        for m in [Mask.disc, .roundedRect(radius: 0.4), .chamfer(inset: 0.3)] {
+            let out = try #require(applyMask(red, m, fill: .alpha))
+            #expect(out.sample(32, 32) == RGBA(255, 0, 0, 255), "\(m.label): centre is artwork")
+            #expect(out.sample(0, 0).a == 0, "\(m.label): corner is cut")
+        }
+    }
+
+    /// The architecture earning its keep: a radial gradient can only follow the
+    /// rim when the rim is a circle, so the non-disc combinations refuse vector
+    /// export instead of writing a picture that does not match the screen.
+    @Test func aGradientOnANonCircularMaskHasNoVectorForm() {
+        #expect(Operation.mask(.disc, fill: .gradient(inner: .black, outer: .white)).hasVectorForm)
+        #expect(!Operation.mask(.roundedRect(radius: 0.4),
+                                fill: .gradient(inner: .black, outer: .white)).hasVectorForm)
+        #expect(!Operation.mask(.chamfer(inset: 0.3),
+                                fill: .gradient(inner: .black, outer: .white)).hasVectorForm)
+        // Every other fill is fine on every shape.
+        #expect(Operation.mask(.chamfer(inset: 0.3), fill: .white).hasVectorForm)
+        #expect(Operation.mask(.roundedRect(radius: 0.4), fill: .alpha).hasVectorForm)
+    }
+
+    @Test func theRefusalNamesTheStep() {
+        var c = Composition(source: Source(raster: Raster(empty: 8, height: 8),
+                                           vector: VectorSource(svg: "<svg/>", width: 8, height: 8)),
+                            canvas: 400)
+        c.setPlacement(Placement(dx: 0, dy: 0, scale: 1))
+        c.ops.append(.mask(.chamfer(inset: 0.3), fill: .gradient(inner: .black, outer: .white)))
+        #expect(c.vectorRefusal == "step 2, Chamfer mask, has no vector form")
+        #expect(renderVector(c) == nil)
+    }
+
+    @Test func eachShapeWritesItsOwnClipAndInverse() {
+        let shapes: [(Mask, String)] = [
+            (.disc, "circle"), (.roundedRect(radius: 0.4), "rect"), (.chamfer(inset: 0.3), "polygon"),
+        ]
+        for (m, tag) in shapes {
+            #expect(m.svgClipShape(size: 400).contains("<\(tag)"), "\(m.label) clip shape")
+            let inv = m.svgInverseClipPath(size: 400)
+            #expect(inv.contains("clip-rule=\"evenodd\""), "\(m.label) inverse must be even-odd")
+            #expect(inv.contains("M0,0 H400 V400 H0 Z"), "\(m.label) inverse starts from the canvas")
+        }
+    }
+}

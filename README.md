@@ -44,8 +44,14 @@ Undo is a stack of compositions, so no operation needs its own inverse.
   with a visible guide when one fires.
 - **Cover** or **Fit** framing. Changing the canvas size rescales the framing
   rather than re-cropping it.
-- A **disc / label mask**, with the corners left transparent, filled white,
-  filled with a colour, or run as a radial gradient from the rim outward.
+- A **mask** — disc, rounded rectangle or chamfer, the latter two with an
+  adjustable amount. At full amount a rounded rectangle *is* the disc, so the
+  control runs continuously from square to circle. Corners can be left
+  transparent, filled white, filled with a colour, or run as a radial gradient
+  from the rim outward.
+- A **preview backdrop** — checker, grey, black, white, or a colour picked from
+  the image or from anywhere on screen — so alpha can be judged against the
+  background the artwork will sit on. It is never written to the file.
 - Save as PNG, or **as SVG** when the source is vector and every step has a
   vector form. Or overwrite the original — but only ever a PNG.
 - Undo and redo the whole edit history (⌘Z / ⇧⌘Z).
@@ -147,6 +153,15 @@ what you did not.
 **Disc / label mask**
 
 - [ ] The mask is a circle inscribed in the square, and clips the corners.
+- [ ] Rounded and chamfer shapes clip as expected, and the amount slider moves them.
+- [ ] A rounded mask at 100% is indistinguishable from the disc.
+- [ ] With a gradient fill on a rounded or chamfer mask, the inspector says SVG
+      is unavailable and names the step.
+- [ ] Backdrop: checker, grey, black and white all apply, and none of them
+      appears in a saved file.
+- [ ] Backdrop from image samples the clicked pixel; a transparent pixel is refused.
+- [ ] Backdrop from screen opens the system sampler.
+- [ ] The backdrop choice survives quitting and reopening.
 - [ ] Transparent corners read as the checkerboard, not as white.
 - [ ] White, colour and gradient corners each render as chosen.
 - [ ] The gradient runs from the rim outward, reaching the corner colour at the

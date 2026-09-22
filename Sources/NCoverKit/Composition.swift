@@ -72,14 +72,38 @@ public struct VectorSource: Equatable, Sendable {
 /// gradient are both derived from it, so a new shape is a new distance
 /// function and nothing else — the antialiased rim, the corner fill and the
 /// vector form all follow.
-public enum Mask: Equatable, Sendable, CaseIterable {
+public enum Mask: Equatable, Sendable {
     case disc
+    /// Corner radius as a fraction of half the canvas. At 1.0 this *is* the
+    /// disc — which is a useful property, not a coincidence: it means the
+    /// slider runs continuously from square to circle.
+    case roundedRect(radius: Double)
+    /// Corner cut as a fraction of half the canvas. At 1.0 the octagon has
+    /// closed up into a diamond.
+    case chamfer(inset: Double)
 
     public func signedDistance(x: Double, y: Double, size: Double) -> Double {
+        let c = size / 2
+        let px = x - c, py = y - c
         switch self {
         case .disc:
-            let c = size / 2
-            return ((x - c) * (x - c) + (y - c) * (y - c)).squareRoot() - c
+            return (px * px + py * py).squareRoot() - c
+
+        case .roundedRect(let f):
+            // Standard rounded-box distance: shrink the box by the radius,
+            // measure to that, then subtract the radius back.
+            let r = max(0, min(1, f)) * c
+            let qx = abs(px) - (c - r), qy = abs(py) - (c - r)
+            let outside = (max(qx, 0) * max(qx, 0) + max(qy, 0) * max(qy, 0)).squareRoot()
+            return outside + min(max(qx, qy), 0) - r
+
+        case .chamfer(let f):
+            // A box intersected with the two diagonal half-planes that cut its
+            // corners. The cut passes through (c - i, c) and (c, c - i).
+            let i = max(0, min(1, f)) * c
+            let box = max(abs(px) - c, abs(py) - c)
+            let diagonal = (abs(px) + abs(py) - (2 * c - i)) / 2.0.squareRoot()
+            return max(box, diagonal)
         }
     }
 
@@ -88,6 +112,14 @@ public enum Mask: Equatable, Sendable, CaseIterable {
     /// corner leaves the corner pixel short of the outer stop.
     public func maxSignedDistance(size: Double) -> Double {
         signedDistance(x: 0.5, y: 0.5, size: size)
+    }
+
+    public var label: String {
+        switch self {
+        case .disc:         return "Disc"
+        case .roundedRect:  return "Rounded"
+        case .chamfer:      return "Chamfer"
+        }
     }
 }
 
@@ -106,16 +138,26 @@ public enum Operation: Equatable, Sendable {
     /// offers SVG export, and the UI can name the step that refused.
     public var hasVectorForm: Bool {
         switch self {
-        case .place:  return true      // a transform
-        case .mask:   return true      // a clipPath, plus an inverse-clipped fill
-        case .invert: return true      // feColorMatrix
+        case .place:
+            return true                            // a transform
+        case .mask(let m, let fill):
+            // A clipPath, plus an inverse-clipped fill. With one honest
+            // exception: the corner gradient is a *radial* gradient, which can
+            // only follow the shape when the shape is a circle. For a rounded
+            // rectangle or a chamfer the raster backend's distance-field ramp
+            // has no SVG equivalent, so this says so rather than exporting a
+            // picture that does not match the screen.
+            if case .gradient = fill, m != .disc { return false }
+            return true
+        case .invert:
+            return true                            // feColorMatrix
         }
     }
 
     public var label: String {
         switch self {
         case .place:            return "Place"
-        case .mask(let m, _):   return m == .disc ? "Disc mask" : "Mask"
+        case .mask(let m, _):   return m.label + " mask"
         case .invert:           return "Invert"
         }
     }

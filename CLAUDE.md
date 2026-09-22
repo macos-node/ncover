@@ -56,6 +56,17 @@ backend changes.
 
 ## Traps specific to this repo
 
+- **The backdrop is preview-only and must stay that way.** It exists so alpha
+  can be judged against the background the artwork will sit on, which only
+  works if it never reaches a renderer. Anything that composites it into
+  `renderRaster` or `renderVector` is a data bug, not a feature.
+- **A gradient fill has no vector form on a non-circular mask**, and
+  `hasVectorForm` says so. An SVG `radialGradient` follows the rim only when
+  the rim is a circle; the raster backend's ramp is distance-field based and
+  follows any shape. Rather than export a near-miss, the composition refuses
+  and names the step. This is the pattern for every future operation: answer
+  `hasVectorForm` **honestly**, because claiming a form you have not written
+  makes SVG export drop the step silently.
 - **`Mask` is a signed distance function, not a shape.** Coverage, the corner
   gradient and the vector clip path are all derived from it, so a new shape is a
   new `signedDistance` case plus its two SVG forms — roughly five lines, with the

@@ -79,10 +79,57 @@ private struct Inspector: View {
                     .help("Re-centre the image and undo any dragging or zooming.")
             }
 
-            Section("Disc / label") {
-                Toggle("Disc mask", isOn: $model.discOn)
-                    .help("Mask to a circle inscribed in the canvas — a record, not a rounded rectangle. It is inscribed in the CANVAS, so an inset source is only clipped at its corners.")
+            Section("Backdrop") {
+                // Preview only — never composited into anything written.
+                Picker("Behind", selection: $model.backdrop) {
+                    Text("Checker").tag(Backdrop.checker)
+                    Text("Grey").tag(Backdrop.grey)
+                    Text("Black").tag(Backdrop.black)
+                    Text("White").tag(Backdrop.white)
+                    if case .custom = model.backdrop { Text("Picked").tag(model.backdrop) }
+                }
+                .help("What sits behind the artwork while you work, so alpha can be judged against a real background. Never written to the file.")
+
+                HStack {
+                    Button { model.samplingBackdrop.toggle() } label: {
+                        Label("From image", systemImage: "eyedropper")
+                    }
+                    .help("Then click a pixel on the canvas to match its colour.")
+                    Button { model.pickBackdropFromScreen() } label: {
+                        Label("From screen", systemImage: "eyedropper.halffull")
+                    }
+                    .help("The system colour sampler — pick from anywhere on screen, not just this window.")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                if model.samplingBackdrop {
+                    Text("Click a pixel on the canvas…")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
+
+            Section("Mask") {
+                Toggle("Mask", isOn: $model.discOn)
+                    .help("The mask is inscribed in the CANVAS, not fitted to the artwork — so an inset source is only clipped at its corners.")
                 if model.discOn {
+                    Picker("Shape", selection: $model.maskShape) {
+                        ForEach(AppModel.MaskKind.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .help("Disc is a circle inscribed in the canvas. Rounded and Chamfer cut the corners by the amount below — at full amount a rounded rectangle IS the disc.")
+
+                    if model.maskHasAmount {
+                        HStack {
+                            Text("Amount")
+                            Slider(value: $model.maskAmount, in: 0...1)
+                            Text(String(format: "%.0f%%", model.maskAmount * 100))
+                                .monospacedDigit().foregroundStyle(.secondary)
+                                .frame(width: 44, alignment: .trailing)
+                        }
+                        .help("How much corner goes, as a fraction of half the canvas.")
+                    }
+
                     Picker("Corners", selection: $model.fillKind) {
                         ForEach(AppModel.FillKind.allCases) { Text($0.label).tag($0) }
                     }

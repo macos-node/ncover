@@ -10,10 +10,19 @@ import Foundation
 
 extension Mask {
     /// The clip shape itself.
-    func svgClipShape(size: Double) -> String {
+    func svgClipShape(size s: Double) -> String {
         switch self {
         case .disc:
-            return #"<circle cx="\#(f(size / 2))" cy="\#(f(size / 2))" r="\#(f(size / 2))"/>"#
+            return #"<circle cx="\#(f(s / 2))" cy="\#(f(s / 2))" r="\#(f(s / 2))"/>"#
+        case .roundedRect(let frac):
+            let r = max(0, min(1, frac)) * s / 2
+            return #"<rect width="\#(f(s))" height="\#(f(s))" rx="\#(f(r))" ry="\#(f(r))"/>"#
+        case .chamfer(let frac):
+            let i = max(0, min(1, frac)) * s / 2
+            let pts = [(i, 0.0), (s - i, 0.0), (s, i), (s, s - i),
+                       (s - i, s), (i, s), (0.0, s - i), (0.0, i)]
+                .map { "\(f($0.0)),\(f($0.1))" }.joined(separator: " ")
+            return #"<polygon points="\#(pts)"/>"#
         }
     }
 
@@ -26,18 +35,34 @@ extension Mask {
     /// the raster backend the `(1 - coverage)` term says this implicitly; in
     /// vector it has to be said out loud.
     func svgInverseClipPath(size s: Double) -> String {
+        let outer = #"M0,0 H\#(f(s)) V\#(f(s)) H0 Z "#
+        let inner: String
         switch self {
         case .disc:
             let r = s / 2, c = s / 2
-            return #"<path clip-rule="evenodd" d="M0,0 H\#(f(s)) V\#(f(s)) H0 Z "# +
-                   #"M\#(f(c)),\#(f(c - r)) A\#(f(r)),\#(f(r)) 0 1,0 \#(f(c)),\#(f(c + r)) "# +
-                   #"A\#(f(r)),\#(f(r)) 0 1,0 \#(f(c)),\#(f(c - r)) Z"/>"#
+            inner = #"M\#(f(c)),\#(f(c - r)) A\#(f(r)),\#(f(r)) 0 1,0 \#(f(c)),\#(f(c + r)) "# +
+                    #"A\#(f(r)),\#(f(r)) 0 1,0 \#(f(c)),\#(f(c - r)) Z"#
+        case .roundedRect(let frac):
+            let r = max(0, min(1, frac)) * s / 2
+            inner = #"M\#(f(r)),0 H\#(f(s - r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(s)),\#(f(r)) "# +
+                    #"V\#(f(s - r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(s - r)),\#(f(s)) "# +
+                    #"H\#(f(r)) A\#(f(r)),\#(f(r)) 0 0,1 0,\#(f(s - r)) "# +
+                    #"V\#(f(r)) A\#(f(r)),\#(f(r)) 0 0,1 \#(f(r)),0 Z"#
+        case .chamfer(let frac):
+            let i = max(0, min(1, frac)) * s / 2
+            inner = #"M\#(f(i)),0 H\#(f(s - i)) L\#(f(s)),\#(f(i)) V\#(f(s - i)) "# +
+                    #"L\#(f(s - i)),\#(f(s)) H\#(f(i)) L0,\#(f(s - i)) V\#(f(i)) Z"#
         }
+        return #"<path clip-rule="evenodd" d="\#(outer)\#(inner)"/>"#
     }
 
     /// Distance from the centre to the furthest drawn pixel centre — the same
     /// quantity the raster backend normalises its gradient by, so both ramps
     /// reach the outer stop at the same place.
+    ///
+    /// Only meaningful for `.disc`: a radial gradient follows the rim only when
+    /// the rim is a circle. `Operation.hasVectorForm` refuses the other
+    /// combinations rather than exporting a near-miss.
     func gradientOuterRadius(size: Double) -> Double {
         maxSignedDistance(size: size) + size / 2
     }
