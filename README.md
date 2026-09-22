@@ -84,6 +84,11 @@ assertion hides a regression; a deleted one records a decision.
 The checklist above is a template — its boxes stay empty and get re-run. This is
 the record of what has actually been exercised on real files.
 
+**2026-09-23 (later):** tooltips appear on hover throughout, wrapped to a
+sensible width. Getting there needed three mechanisms and a window flag — see
+the tooltip notes in `CLAUDE.md` before touching them, because the two that
+failed both read as correct.
+
 **2026-09-23:** the mask shapes and the amount slider, the vector refusal on a
 gradient over a non-circular mask, and the backdrop (including that it stays out
 of saved files) were all exercised by hand and behave.
