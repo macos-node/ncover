@@ -10,7 +10,13 @@ CONFIG   = release
 BUILDDIR = .build/$(CONFIG)
 PREFIX   = $(HOME)/Applications
 
-.PHONY: all app icon version run test clean install uninstall help
+# Read back from the bundle's own plist, so the disk image can never claim a
+# version the app inside it does not.
+VERSION  = $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
+DMG      = n.cover-$(VERSION)-macos-arm64.dmg
+DMGROOT  = .build/dmg
+
+.PHONY: all app dmg icon version run test clean install uninstall help
 
 all: app
 
@@ -49,6 +55,38 @@ app: $(BUILDDIR)/ncover
 	@codesign --force --sign - "$(APP)" >/dev/null 2>&1 || \
 	  echo "warning: could not ad-hoc sign; SVG rendering may fail"
 	@echo "built $(APP)"
+
+## Build a disk image for Apple silicon: the app plus a drop target
+##
+## `ditto`, not `cp -R`: it is the one copy that is documented to carry a
+## bundle's signature and extended attributes across intact, and an app whose
+## ad-hoc signature did not survive the copy renders every SVG blank — silently.
+##
+## The image is NOT notarized and the app inside it is ad-hoc signed, so
+## Gatekeeper will refuse it on another machine until the quarantine flag is
+## cleared. That is a property of having no Developer ID, not of the image, and
+## signing the .dmg itself would not change it.
+dmg: app
+	@rm -rf "$(DMGROOT)" "$(DMG)"
+	@mkdir -p "$(DMGROOT)"
+	@ditto "$(APP)" "$(DMGROOT)/$(APP)"
+	@# The customary drop target. A symlink rather than a copy, obviously.
+	@ln -s /Applications "$(DMGROOT)/Applications"
+	@hdiutil create -quiet -volname "n.cover $(VERSION)" -srcfolder "$(DMGROOT)" \
+	  -ov -format UDZO -fs HFS+ "$(DMG)"
+	@rm -rf "$(DMGROOT)"
+	@# Verify what we are about to hand someone, rather than trusting the
+	@# exit code: mount it read-only and check the signature on the copy that
+	@# is actually inside the image.
+	@mnt=$$(mktemp -d /tmp/ncover-dmg.XXXXXX); \
+	 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$$mnt" "$(DMG)" && \
+	 codesign --verify "$$mnt/$(APP)" && \
+	 /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+	   "$$mnt/$(APP)/Contents/Info.plist" >/dev/null && \
+	 hdiutil detach -quiet "$$mnt" && rmdir "$$mnt" && \
+	 echo "built $(DMG) — app inside verifies" || \
+	 { hdiutil detach -quiet "$$mnt" 2>/dev/null; rmdir "$$mnt" 2>/dev/null; \
+	   echo "FAILED: the app inside $(DMG) did not verify"; exit 1; }
 
 # PHONY prerequisite: swift build does its own up-to-date check, so running it
 # every time costs nothing — whereas a file rule would let `make app` ship a
@@ -91,11 +129,12 @@ uninstall:
 
 clean:
 	swift package clean
-	@rm -rf "$(APP)"
+	@rm -rf "$(APP)" "$(DMGROOT)" n.cover-*.dmg
 
 help:
 	@echo "Available make targets:"
 	@echo "  app        - Build n.cover.app (default)"
+	@echo "  dmg        - Build a disk image for Apple silicon"
 	@echo "  icon       - Regenerate ncover.icns from icon.svg (needs rsvg-convert)"
 	@echo "  version    - Bump the version: make version V=x.y.z"
 	@echo "  run        - Build and launch"

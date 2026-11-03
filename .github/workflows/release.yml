@@ -1,7 +1,8 @@
 name: Release
 
 # Fires on any pushed tag starting with `v`, and can be kicked off manually.
-# Publishes a GitHub Release with a zipped, ad-hoc signed n.cover.app.
+# Publishes a GitHub Release with an ad-hoc signed n.cover.app, as both a
+# .dmg (drag to Applications) and a .zip (for scripts).
 #
 # One job, unlike the Tauri apps in the suite: this is a single-platform app,
 # so there is no cross-platform release-ownership dance to get right.
@@ -50,21 +51,43 @@ jobs:
       - name: Build the app bundle
         run: make app
 
-      - name: Verify the bundle is signed and carries its icon
+      # The tag and Info.plist must agree. They are bumped by separate hands —
+      # `make version` writes the plist, `git tag` names the release — and a
+      # release whose app reports a different version from its own filename is
+      # the kind of thing nobody notices until someone files a bug against the
+      # wrong build.
+      - name: Verify the bundle is signed, carries its icon, and matches the tag
         run: |
           codesign --verify --verbose n.cover.app
           test -f n.cover.app/Contents/Resources/ncover.icns
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" n.cover.app/Contents/Info.plist
+          plist=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+                  n.cover.app/Contents/Info.plist)
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          test "$plist" = "${tag#v}" || {
+            echo "tag $tag says ${tag#v}, Info.plist says $plist — run 'make version'"
+            exit 1
+          }
 
       - name: Zip
         id: zip
         run: |
           tag="${{ github.event.inputs.tag || github.ref_name }}"
-          name="n.cover-${tag}-macos-arm64.zip"
+          name="n.cover-${tag#v}-macos-arm64.zip"
           # ditto, not zip: it preserves the bundle's resource forks and, more
           # to the point, its code signature.
           ditto -c -k --keepParent "n.cover.app" "$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      # Both, deliberately. The .dmg is what someone double-clicks and drags;
+      # the .zip is what a script downloads. `make dmg` mounts the image it
+      # just wrote and verifies the signature on the app INSIDE it, so a
+      # bundle that lost its signature in the copy fails the build rather than
+      # reaching a release and rendering every SVG blank.
+      - name: Disk image
+        id: dmg
+        run: |
+          make dmg
+          echo "name=$(ls n.cover-*.dmg)" >> "$GITHUB_OUTPUT"
 
       - name: Publish
         uses: softprops/action-gh-release@v3
@@ -76,11 +99,14 @@ jobs:
             **Apple silicon only**, and **not notarized** — the app is ad-hoc
             signed, so macOS will refuse it on first launch.
 
-            After unzipping:
+            Open the `.dmg` and drag **n.cover** to Applications (or unzip the
+            `.zip`), then clear the flag once:
 
             ```bash
             xattr -dr com.apple.quarantine /Applications/n.cover.app
             ```
 
             Or build it yourself: `make app`. See the README.
-          files: ${{ steps.zip.outputs.name }}
+          files: |
+            ${{ steps.dmg.outputs.name }}
+            ${{ steps.zip.outputs.name }}
