@@ -10,8 +10,9 @@ free to develop differently, and deliberately share no code.
 
 ## Install
 
-Download the zip from [Releases](https://github.com/macos-node/ncover/releases),
-unzip, and move `n.cover.app` to `/Applications`.
+Download the `.dmg` from
+[Releases](https://github.com/macos-node/ncover/releases) and drag
+**n.cover** to Applications. (A `.zip` is published too, for scripts.)
 
 It is **Apple silicon only** and **not notarized** — the bundle is ad-hoc
 signed, so macOS refuses it on first launch and says the app is damaged. It is
@@ -28,12 +29,18 @@ produce the same app, without the flag.
 
 ```
 make app     # build n.cover.app
+make dmg     # build a disk image (Apple silicon)
 make run     # build and launch
-make test    # run the ported rule tests
+make test    # run the rule tests
 make install # copy to ~/Applications
 make icon    # regenerate ncover.icns from icon.svg (needs rsvg-convert)
 make version V=0.2.0   # bump the version before tagging
 ```
+
+`make dmg` writes `n.cover-<version>-macos-arm64.dmg`, then **mounts it and
+verifies the signature on the app inside** — a bundle whose ad-hoc signature
+did not survive the copy renders every SVG blank, silently, which is not
+something to find out from a release.
 
 Releases are cut by pushing a tag: `make version V=x.y.z`, update
 `CHANGELOG.md`, commit, then `git tag v0.2.0 && git push --tags`.
@@ -57,27 +64,57 @@ Undo is a stack of compositions, so no operation needs its own inverse.
 
 ## What it does
 
+**Colour**
 
+- Pick a colour from **anywhere on screen** (the system sampler), from the
+  **artwork** (click a pixel, with a readout of what is under the pointer), or
+  from **macOS's own Colours panel** — all three land in the same history.
+- Every colour is shown as **HEX, RGB and HSL at once**, each its own copy
+  button. Copy puts the text *and* an `NSColor` on the pasteboard, so another
+  app's colour well takes it.
+- A **history** 32 deep, recency-deduplicated, with the most recent ten as a
+  strip you can scan.
+- **Palettes** with named swatches: import `.gpl`, `.json` and `.clr` (including
+  the colour lists macOS already has, by name), export to **GPL, JSON, CSS or
+  CLR**, and **install into `~/Library/Colors`** so a palette shows up in every
+  app's Colours panel. Pin up to three to the Colour view.
+- A palette **from the artwork**: for a raster, its dominant colours, quantised;
+  for an SVG, the colours it **declares**, with its fonts and text shown beside
+  them. The difference matters — a PNG does not state its colours, an SVG does.
+- The app's palettes are **attached to NSColorPanel**, so they appear in its
+  Palettes tab.
 
-- Open **PNG / JPEG / WebP / SVG**.
+**Artwork**
+
+- Open **PNG / JPEG / WebP / SVG**, or **browse a folder** — every image beside
+  the one you opened is one arrow key (or ⌘[ / ⌘]) away.
 - Place the source on a square canvas (200–1000 px) with drag, magnify and
   snapping to the canvas centre and edges — each axis snapping independently,
   with a visible guide when one fires.
 - **Cover** or **Fit** framing. Changing the canvas size rescales the framing
   rather than re-cropping it.
+- **Build steps that stack**: a blank canvas to start from, **Invert** (RGB
+  only — a transparent pixel stays transparent), a **centred square**, and a
+  **mask**.
 - A **mask** — disc, rounded rectangle or chamfer, the latter two with an
   adjustable amount — inscribed either in the **canvas** or in the **artwork's**
   own bounds. The latter matters for a source that does not reach the canvas
   edges: inscribed in the canvas it is only clipped at its corners, inscribed in
-  the artwork it becomes a mask *of the artwork*. At full amount a rounded rectangle *is* the disc, so the
-  control runs continuously from square to circle. Corners can be left
-  transparent, filled white, filled with a colour, or run as a radial gradient
-  from the rim outward.
+  the artwork it becomes a mask *of the artwork*. At full amount a rounded
+  rectangle *is* the disc, so the control runs continuously from square to
+  circle. Corners can be left transparent, filled white, filled with a colour,
+  or run as a radial gradient from the rim outward.
+- A **grid** (thirds, centre, the inscribed circle) and a **Source / Result
+  rail**, so what every control changed is visible beside what it changed.
 - A **preview backdrop** — checker, grey, black, white, or a colour picked from
   the image or from anywhere on screen — so alpha can be judged against the
   background the artwork will sit on. It is never written to the file.
 - Save as PNG, or **as SVG** when the source is vector and every step has a
   vector form. Or overwrite the original — but only ever a PNG.
+- **Batch** one recipe over a folder, or over every release **ndisc** has
+  published, with a **preview contact sheet** and a **dry run**. It never
+  writes over your originals, and refuses an output folder that would make the
+  next run eat its own output.
 - Undo and redo the whole edit history (⌘Z / ⇧⌘Z).
 
 Output is always PNG. Not a preference: the disc mask needs an alpha channel.
@@ -88,14 +125,20 @@ Output is always PNG. Not a preference: the disc mask needs an alpha channel.
 it is about gestures, dialogs and what the screen actually shows — and because
 the bugs found here so far have all been in that gap.
 
-### Covered automatically (21 tests)
+### Covered automatically (95 tests — 68 swift-testing, 27 XCTest)
 
 | Area | What is asserted |
 |---|---|
 | Disc mask | Transparent / white / solid / gradient corners; gradient runs rim→corner; a non-square source is covered, not letterboxed |
 | Placement | Cover and Fit centring and scale; snapping to centre and edges; each axis independent; rescaling a canvas does not re-crop |
 | Drag | A slow drag escapes a snap zone; a small one is held by it; translation is divided by the view scale; a zero scale is refused |
-| Guards | Output may not equal or nest inside the source; Overwrite refuses anything but a PNG |
+| Build steps | Invert leaves alpha alone; a stamped square is centred, opaque and clamped; the square has a vector form and is drawn over the artwork |
+| Colour | HEX / RGB / HSL forms; `.gpl` reads named, unnamed and space-named swatches and round-trips; `.clr` round-trips through NSColorList; CSS uses swatch names; the JSON is the GTK app's shape |
+| Store | History and pins are recency-deduped and capped; a rename follows its pin and refuses a collision; a removed palette is unpinned; every field survives a file it has never seen |
+| Quantising | Dominant colours come back most-used first; transparent pixels are not colours; the representative is a colour the image contains |
+| SVG | Declared colours, not pixels; `none` and `url(#…)` are not colours; fonts, text and structure; a `style=""` is read; a malformed file errors |
+| Batch | The destination mirrors the source tree; discovery recurses, filters and skips dot-dirs; a file found twice is written once; a manifest with no root falls back to what its releases share, or is refused; a whole run writes the right file and leaves the original byte-identical |
+| Guards | Output may not equal, nest inside, or contain the source; Overwrite refuses anything but a PNG |
 | File I/O | A PNG round-trips with its alpha corners intact |
 
 Ported tests keep the GTK app's original names and expected pixel values, so the
@@ -220,6 +263,55 @@ what you did not.
 - [ ] Overwrite is disabled for a JPEG, SVG and WebP source.
 - [ ] Overwrite on a PNG replaces it in place, and the result reopens correctly.
 
+**Colour**
+
+- [ ] Pick from screen opens the system sampler, and the colour lands in the
+      history and in all three readouts.
+- [ ] Each of the three readouts copies in its own format, and switching
+      format changes what a later Copy writes.
+- [ ] A copied colour pastes into another app's colour well, not just as text.
+- [ ] The Colours panel opens, this app's palettes appear in its Palettes tab,
+      and dragging round the wheel does *not* fill the history. Keep adds one.
+- [ ] The in-app eyedropper shows a readout under the pointer and picks on
+      click; a transparent pixel is refused with a readable reason.
+- [ ] History: 32 deep, a repeat moves to the front rather than duplicating,
+      and "Save as palette" keeps all of them, not the visible ten.
+- [ ] Palettes: import a `.gpl`, a `.json` and a `.clr`; import a macOS colour
+      list by name; name a swatch; pin three and watch the fourth push one off.
+- [ ] Export each of the four formats and reopen the file in something else.
+- [ ] Install in `~/Library/Colors`, then find the palette in TextEdit's
+      Colours panel.
+- [ ] Palette from an image, and from an SVG — the SVG one should be the
+      file's own hex values, with its fonts and text shown.
+
+**Build steps and browsing**
+
+- [ ] Invert inverts the colours and leaves transparent pixels transparent.
+- [ ] A centred square stamps opaque, the slider moves it, and it covers
+      transparent ground.
+- [ ] Blank canvas starts from white, and Overwrite is off (there is nothing
+      to overwrite).
+- [ ] The grid shows thirds, centre and the inscribed circle, and appears in
+      no saved file.
+- [ ] The Source / Result rail shows the file on the left and the canvas on
+      the right, and both update.
+- [ ] Browse a folder; ← and → (and ⌘[ / ⌘]) walk it and wrap at both ends.
+- [ ] Opening a new image clears the build steps rather than applying them to it.
+
+**Batch — the part that touches a lot of user data at once**
+
+- [ ] The output folder being the source, inside it, or above it is each
+      refused with its own reason, before anything is written.
+- [ ] Preview renders the first twelve, including the failures.
+- [ ] A dry run writes nothing and still reports a file that would fail.
+- [ ] A real run mirrors the source tree, suffixes `-disc` only with a mask,
+      writes PNG, and leaves every original untouched.
+- [ ] Stop actually stops, and the summary says it did.
+- [ ] With ndisc's manifest present, the published scope finds the releases
+      and mirrors against the library root.
+- [ ] An SVG in a batch renders rather than failing (it goes through WebKit,
+      so this is the one that proves the loop serialises).
+
 **Fit and finish**
 
 - [ ] Tooltips appear on the toolbar, the inspector controls and the canvas.
@@ -248,8 +340,24 @@ names and the original expected pixel values. That makes the GTK app a test
 oracle rather than a dependency — and when this app diverges on purpose, the
 test is deleted rather than weakened.
 
-Not yet here, and present in the GTK app: named palettes, colour history,
-screen picking, batch over a folder or an ndisc-published discography.
+**Still only in the GTK app**, and deliberately:
+
+- **Seeded sample files.** The GTK app writes four demo files on first run,
+  each showing a different feature. Writing unrequested files into someone's
+  home directory is a bigger decision on macOS than on Linux, and it is not
+  one to make quietly in a parity pass — so it is a documented gap rather than
+  a silent one.
+- **The getting-started tips panel.** The same call: it exists to introduce
+  the seeded samples.
+- **A magnifier while picking.** The GTK app draws a crosshair and a zoomed
+  preview under the cursor. Here the canvas shows a **readout** of the colour
+  under the pointer instead, which answers the question a magnifier is
+  actually for — *which* colour am I about to get — with less machinery.
+
+**Only here**, because the platform has it: the system colour sampler
+(the GTK app needs a separate X11 binary, and a portal on Wayland),
+`NSColorPanel` with this app's palettes attached, `.clr` colour lists,
+installing a palette into `~/Library/Colors`, and SVG output.
 
 ## Licence
 

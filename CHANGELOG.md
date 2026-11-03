@@ -8,6 +8,59 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-03
+
+Feature parity with the GTK sibling, plus what only macOS can do.
+
+### Added
+
+**Colour** — the half that was missing entirely.
+
+- Pick from anywhere on screen (the system sampler), from the artwork (click a
+  pixel, with a readout of what is under the pointer), or from macOS's own
+  Colours panel. All three land in the same history.
+- HEX, RGB and HSL shown at once, each its own copy button. Copy puts the text
+  *and* an `NSColor` on the pasteboard, so another app's colour well takes it.
+- A colour history, 32 deep and recency-deduplicated, with the most recent ten
+  as a strip.
+- Palettes with named swatches: import `.gpl`, `.json` and `.clr` — including
+  the colour lists macOS already has, by name — and export to GPL, JSON, CSS or
+  CLR. Pin up to three to the Colour view.
+- **Install a palette into `~/Library/Colors`**, so it appears in every app's
+  Colours panel; and the app's palettes are attached to `NSColorPanel`, so they
+  appear in its Palettes tab.
+- A palette from the artwork: a raster's dominant colours, quantised, or an
+  SVG's **declared** colours with its fonts and text beside them.
+
+**Artwork**
+
+- Browse a folder: every image beside the one you opened is one arrow key, or
+  ⌘[ / ⌘], away.
+- Build steps that stack: a blank canvas, Invert (RGB only — alpha untouched)
+  and a centred square, each an operation with its own vector form, each
+  undoable.
+- A grid over the preview (thirds, centre, the inscribed circle) and a
+  Source / Result rail.
+- **Batch**: one recipe over a folder, or over every release ndisc has
+  published, with a preview contact sheet and a dry run. It never writes over
+  your originals.
+
+**Release**
+
+- `make dmg` builds a disk image for Apple silicon and verifies the signature
+  on the app *inside* it; the workflow publishes both the `.dmg` and the `.zip`,
+  and refuses a tag whose version disagrees with `Info.plist`.
+
+### Changed
+
+- The window has a sidebar — Artwork, Colour, Palettes — because the two halves
+  of the app are not the same shape.
+- `guardBatch` also refuses a source folder nested inside the output folder. It
+  overwrites nothing, and still has a run write over the folder its own inputs
+  sit in.
+- The canvas size is remembered between launches.
+- 95 automated tests, up from 21.
+
 ## [0.1.0] — 2026-09-23
 
 First release.
@@ -30,5 +83,6 @@ First release.
 - Overwrite the original in place, guarded to PNG sources only.
 - Undo and redo across the whole edit history.
 
-[Unreleased]: https://github.com/macos-node/ncover/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/macos-node/ncover/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/macos-node/ncover/releases/tag/v0.2.0
 [0.1.0]: https://github.com/macos-node/ncover/releases/tag/v0.1.0

@@ -55,6 +55,18 @@ struct CanvasView: View {
                             .onEnded { _ in model.endZoom() }
                     )
                     .tip(Self.canvasTip(model.canvasPick))
+                    // Only while an eyedropper is armed: the readout answers
+                    // "which colour am I about to get", which is not a
+                    // question you have while dragging.
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let p):
+                            model.hover(canvasX: p.x / viewScale, canvasY: p.y / viewScale)
+                        case .ended:
+                            model.endHover()
+                        }
+                    }
+                    .overlay(alignment: .topLeading) { readout }
                 } else {
                     VStack(spacing: 10) {
                         Image(systemName: "photo.on.rectangle.angled")
@@ -79,6 +91,28 @@ struct CanvasView: View {
             .onKeyPress(.rightArrow) { model.step(1); return .handled }
             .onKeyPress(.upArrow) { model.step(-1); return .handled }
             .onKeyPress(.downArrow) { model.step(1); return .handled }
+        }
+    }
+
+    /// What is under the pointer, while an eyedropper is armed.
+    @ViewBuilder
+    private var readout: some View {
+        if model.picking {
+            HStack(spacing: 7) {
+                ZStack {
+                    MiniChecker()
+                    if let c = model.hovered { Color(c) }
+                }
+                .frame(width: 18, height: 18)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.separator))
+                Text(model.hovered?.hex ?? "transparent")
+                    .font(.system(.caption, design: .monospaced))
+            }
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            .padding(8)
+            .allowsHitTesting(false)
         }
     }
 

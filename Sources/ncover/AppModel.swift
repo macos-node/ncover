@@ -93,6 +93,14 @@ final class AppModel: ObservableObject {
     }
     @Published var canvasPick: CanvasPick = .off
 
+    /// The colour under the pointer, while an eyedropper is armed.
+    ///
+    /// The GTK app draws a crosshair and a magnifier for this. A readout is the
+    /// same information with less machinery, and it answers the question the
+    /// magnifier is really for: *which* colour am I about to get. Only
+    /// published while armed, so hover does no work in the normal case.
+    @Published private(set) var hovered: RGB?
+
     /// Whether a click should sample rather than drag.
     var picking: Bool { canvasPick != .off }
 
@@ -447,6 +455,19 @@ final class AppModel: ObservableObject {
 
     // MARK: - picking off the canvas
 
+    /// The colour the pointer is over, for the readout. Cheap — one array
+    /// index into the raster the preview was built from.
+    func hover(canvasX x: Double, canvasY y: Double) {
+        guard picking, let r = lastRender else {
+            if hovered != nil { hovered = nil }
+            return
+        }
+        let px = r.sample(Int(x.rounded(.down)), Int(y.rounded(.down)))
+        hovered = px.a > 0 ? RGB(px.r, px.g, px.b) : nil
+    }
+
+    func endHover() { hovered = nil }
+
     /// Sample the pixel actually on screen at this canvas coordinate, and give
     /// it to whichever eyedropper armed the click.
     ///
@@ -458,6 +479,7 @@ final class AppModel: ObservableObject {
     func samplePixel(canvasX x: Double, canvasY y: Double) {
         let want = canvasPick
         canvasPick = .off
+        hovered = nil
         guard want != .off, let r = lastRender else { return }
         let px = r.sample(Int(x.rounded(.down)), Int(y.rounded(.down)))
         guard px.a > 0 else {

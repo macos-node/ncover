@@ -10,6 +10,12 @@ a **separate app with the same name and purpose**, written natively for macOS.
 They share no code, by decision: the two are expected to develop differently,
 and a shared core is exactly the coupling that would prevent that.
 
+It has **two halves, and they are not the same shape.** Colour (picking,
+history, palettes) is values and files; artwork is a composition and two
+renderers. The window has a sidebar because of that, not for decoration — and
+the only place they meet is that a pick off the canvas is a pick, and a palette
+can be made from the open document.
+
 It is also **not part of the Tauri `n.*` suite** — no webview shell, no React,
 no Nostr surface, no keyring, no database. It is adjacent to the suite: the same
 brand and colour language, and (once batch lands) a reader of what `ndisc`
@@ -20,8 +26,9 @@ tokens as CSS variables — will waste time here.
 
 ```
 make app     # build n.cover.app
+make dmg     # disk image, verified by mounting it
 make run     # build and launch
-make test    # 17 ported rule tests
+make test    # the rule tests (95: 68 swift-testing, 27 XCTest)
 ```
 
 ## The shape: a composition, not a pipeline
@@ -205,6 +212,95 @@ backend changes.
   change near the write path as touching user data.
 - **Output is always PNG.** Not a preference — the disc / label mask needs an
   alpha channel.
+
+## Traps in the colour half
+
+- **`.clr` is not decoration — it is the reason the colour half is worth
+  having on a Mac.** A Mac already has colour lists: the Colours panel's
+  palette tab is a list of them, and `~/Library/Colors` is where they live. An
+  app that reads `.gpl` but not `.clr` is asking its user to convert their own
+  files to talk to it. Keep `installColorList` and keep the "import a macOS
+  colour list" menu: between them they are the difference between a palette
+  feature and a palette *silo*.
+- **`NSColorList` is a dictionary, so two swatches under one key become one.**
+  `writeColorList` suffixes a duplicate rather than losing it, and an unnamed
+  swatch is keyed by its own hex — which the reader then drops again, because
+  a key that *is* the colour carries no information and would come back as a
+  name nobody typed.
+- **The colour panel must not feed the history.** `NSColorPanel`'s action
+  fires continuously while you drag across the wheel; routing that into
+  `remember` fills all 32 slots with the path the cursor took and buries every
+  colour you actually chose. The panel moves `current` only, and a Keep button
+  says when a panel colour is a pick. The same reasoning is why the backdrop
+  has its own screen-picker entry point: a viewing condition is not a pick.
+- **`ColorPanelBridge` is target/action, and that is not a style choice.**
+  `NSColorPanel` is one of the oldest classes in AppKit and has never grown a
+  publisher. One shared instance, because the panel is a singleton and two
+  listeners would double every change.
+- **The store's JSON is shared with the GTK app**, deliberately: `Swatch`
+  encodes flat (`r`,`g`,`b`,`name`) and `Palette` is `{name, colors}`, which is
+  what that app writes. Changing either shape breaks interchange in a way no
+  test here would notice unless it is the one that pins the shape — which is
+  why `testJSONIsTheSharedShape` exists.
+- **Every field in `ColorData` is optional on the way in.** The file is read
+  by two apps and by older versions of this one; a missing key is normal. And
+  a *corrupt* file starts empty rather than refusing to launch, without
+  overwriting the broken one — there is nothing the user could do at launch,
+  and the file is still there to look at.
+- **Palette identity is the name.** The pinned list stores names and an export
+  is called after one, so `ColorData.add` keeps them unique and `rename`
+  *refuses* a collision rather than silently suffixing: renaming to "Brand 2"
+  when the user typed "Brand" is worse than doing nothing.
+- **A palette from a raster is a summary and must be called one.** A PNG does
+  not declare its colours. `dominantColors` answers "what is most of this
+  picture made of", and its representative is the **mean of each bin**, not the
+  bin centre, so every colour it returns is one the image contains. For an SVG
+  the app reads the *declared* fills and stops instead — that is a different
+  claim and a stronger one, and the UI says which it is making.
+- **`inspectSVG` refuses external entities**, and should keep doing so. It
+  parses a file someone opened; an SVG that can fetch a URL or read a local
+  file while being inspected is a vulnerability, not a feature.
+- **Ties in `inspectSVG`'s output are broken by name**, where the GTK app's
+  `HashMap` left them arbitrary. That is the one place the two deliberately
+  differ, and only where the GTK side had no answer.
+
+## Traps in batch
+
+- **The runner is `@MainActor` throughout, and must stay that way.** An SVG
+  source goes through `WKWebView`, which is asynchronous and main-actor bound,
+  so a batch has to **serialise** through the rasteriser. Fanning out over a
+  `TaskGroup` is the obvious optimisation and it does not work.
+- **`guardBatch` refuses three arrangements, not two**: output equal to the
+  source, output inside it, and the source inside the output. The third
+  overwrites nothing, which is why it is easy to argue for — and it still has
+  a run write over the folder its own inputs sit in.
+- **`batchDest` builds from string components on purpose.**
+  `URL(fileURLWithPath:)` resolves a *relative* path against the process's
+  current directory, so building one from a relpath silently drags the cwd
+  into every output path. A test caught this; keep it.
+- **A preview must show its failures.** A contact sheet that quietly omits the
+  files that would fail is a preview that lies about what the run will do.
+- **Each result row carries its reason.** "31 failed" is unactionable and
+  sends you guessing at the tool from the outside.
+- **ndisc's manifest is at `~/.local/share/ndisc-suite/published.json` on
+  macOS too**, not Application Support. That is ndisc's own decision, made so
+  every app in the suite resolves it identically; this app follows it rather
+  than being idiomatic alone. `libraryRoot` is optional in the v2 shape, so a
+  missing one falls back to what the releases share — and releases with only
+  `/` in common are refused, because mirroring against the root of the disk is
+  not mirroring.
+
+## Releasing
+
+- **`make dmg` mounts the image it just wrote and verifies the app inside
+  it.** Not theatre: a bundle whose ad-hoc signature did not survive the copy
+  renders every SVG blank, with no error, and a release is the worst place to
+  learn that. `ditto`, not `cp -R`, for the same reason.
+- **The workflow refuses a tag whose version disagrees with `Info.plist`.**
+  The two are bumped by different hands — `make version` writes the plist,
+  `git tag` names the release — and a release whose app reports a different
+  version from its own filename is the kind of thing nobody notices until
+  somebody files a bug against the wrong build.
 
 ## Not here
 
