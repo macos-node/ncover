@@ -254,7 +254,13 @@ private struct Inspector: View {
                 }
 
                 Button("Blank canvas") { model.blankCanvas() }
-                    .tip("Start from a white square instead of an image — somewhere to stamp a square or drop a mask.")
+                    .tip("Start from a white square instead of an image — somewhere to set type, stamp a square or drop a mask. It carries a vector form, so a composition built from nothing can still be saved as SVG.")
+            }
+
+            Section("Type") {
+                Toggle("Type", isOn: $model.textOn)
+                    .tip("Set words on the canvas. They are exported as outlines, not as a font reference, so the SVG looks the same on a machine that does not have the font.")
+                if model.textOn { typeControls }
             }
 
             Section("Mask") {
@@ -313,6 +319,75 @@ private struct Inspector: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private var typeControls: some View {
+        // Axis-less, so a return makes a second line. Label art is a line or
+        // two set deliberately; a box that reflows is a different tool.
+        TextField("Words", text: $model.textString, prompt: Text("your words"), axis: .vertical)
+            .lineLimit(1...4)
+            .tip("Return starts a new line. Nothing wraps on its own — a line break here is a decision, not an accident of width.")
+
+        LabeledContent("Font") {
+            HStack(spacing: 8) {
+                Text(model.textFontDisplayName).lineLimit(1)
+                Spacer()
+                Button("Choose…") { model.chooseFont() }
+            }
+        }
+        .tip("The system font panel, with its search and collections — rather than a worse list of the same fonts.")
+
+        if !model.textFontIsReal {
+            Label("“\(model.textFont)” is not installed — another face is being substituted.",
+                  systemImage: "exclamationmark.triangle")
+                .font(.caption).foregroundStyle(.orange)
+        }
+
+        LabeledContent("Size") {
+            HStack(spacing: 8) {
+                Slider(value: $model.textSize, in: 0.02...0.6)
+                Text(String(format: "%.0f%%", model.textSize * 100))
+                    .monospacedDigit().foregroundStyle(.secondary)
+                    .frame(width: 38, alignment: .trailing)
+            }
+        }
+        .tip("A fraction of the canvas, not points — so changing the output size scales the type with it instead of stranding it.")
+
+        LabeledContent("Tracking") {
+            HStack(spacing: 8) {
+                Slider(value: $model.textTracking, in: -0.1...0.5)
+                Text(String(format: "%+.2f", model.textTracking))
+                    .monospacedDigit().foregroundStyle(.secondary)
+                    .frame(width: 42, alignment: .trailing)
+            }
+        }
+        .tip("Letter spacing, as a fraction of the font size. Label lettering is usually set wider than body text.")
+
+        if model.textString.contains("\n") {
+            LabeledContent("Line height") {
+                HStack(spacing: 8) {
+                    Slider(value: $model.textLineSpacing, in: 0.8...2.5)
+                    Text(String(format: "%.2f", model.textLineSpacing))
+                        .monospacedDigit().foregroundStyle(.secondary)
+                        .frame(width: 42, alignment: .trailing)
+                }
+            }
+            .tip("A multiple of the font size.")
+        }
+
+        PaletteWell(label: "Type colour", colour: $model.textColour,
+                    help: "The lettering's colour, from your own palettes.")
+
+        LabeledContent("Position") { PositionGrid() }
+            .tip("Nine places, and the two sliders below for anything between them.")
+
+        LabeledContent("Across") {
+            Slider(value: $model.textX, in: 0...1)
+        }
+        LabeledContent("Down") {
+            Slider(value: $model.textY, in: 0...1)
+        }
     }
 
     @ViewBuilder
@@ -399,6 +474,34 @@ private struct SVGFacts: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(k).frame(width: 58, alignment: .leading).foregroundStyle(.tertiary)
             Text(v).lineLimit(2)
+        }
+    }
+}
+
+/// Nine places for a line of type. A record label's wording lands on one of
+/// these far more often than anywhere else, and dragging two sliders to find
+/// dead centre is a chore the grid removes.
+private struct PositionGrid: View {
+    @EnvironmentObject var model: AppModel
+
+    private let stops: [Double] = [0.25, 0.5, 0.75]
+
+    var body: some View {
+        VStack(spacing: 3) {
+            ForEach(stops, id: \.self) { y in
+                HStack(spacing: 3) {
+                    ForEach(stops, id: \.self) { x in
+                        let on = abs(model.textX - x) < 0.001 && abs(model.textY - y) < 0.001
+                        Button { model.placeText(x: x, y: y) } label: {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(on ? Color.accentColor : Color.secondary.opacity(0.22))
+                                .frame(width: 15, height: 11)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Place type")
+                    }
+                }
+            }
         }
     }
 }

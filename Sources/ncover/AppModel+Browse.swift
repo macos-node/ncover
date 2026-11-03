@@ -62,9 +62,12 @@ extension AppModel {
     /// White because a record label is white far more often than not, and
     /// Invert reaches black from here in one click. There is no source URL, so
     /// Overwrite is off by construction — there is nothing to overwrite.
+    ///
+    /// It carries a **vector** form as well as pixels, so a composition built
+    /// from nothing — type, a square, a mask — exports as a real SVG rather
+    /// than being refused for a source that is not an SVG.
     func blankCanvas() {
-        let size = doc?.canvas ?? data.canvas
-        let raster = NCoverKit.blankCanvas(size)
-        adoptSource(Source(raster: raster), url: nil, name: "blank \(size)×\(size)")
+        let size = doc?.canvas ?? saneCanvas(data.canvas)
+        adoptSource(blankSource(size), url: nil, name: "blank \(size)×\(size)")
     }
 }

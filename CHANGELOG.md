@@ -8,6 +8,21 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Added
+- **Type.** Set words on the canvas in any installed font, through the system
+  font panel. Size, position, tracking and line height are fractions of the
+  canvas, so type scales with the output rather than being stranded at a point
+  size, and a nine-way grid places it without hunting with two sliders.
+- Type exports as **outlines**, not as `<text font-family="…">`: a font
+  reference renders as a different picture, or not at all, on a machine
+  without the font. Measured against librsvg with no font installed, 98.8% of
+  pixels are byte-identical to the raster backend and the two are aligned to
+  the pixel, not merely similar.
+- A **blank canvas now carries a vector form**, so a composition built from
+  nothing — type, a square, a mask — saves as a real SVG. It used to be
+  refused for "the source is not an SVG" even though every step in it had a
+  perfectly good vector form.
+
 ### Changed
 - Every colour well — the square's, the mask's, both gradient stops, batch's —
   now has your own colours one click away: the current colour, the recent ones

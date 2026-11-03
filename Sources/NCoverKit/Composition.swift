@@ -191,6 +191,8 @@ public enum Operation: Equatable, Sendable {
     /// Stamp an opaque, centred square. `frac` is its side as a fraction of
     /// the canvas.
     case square(frac: Double, colour: RGB)
+    /// Set type on the canvas.
+    case text(TextSpec)
 
     /// Whether this operation can be written as vector rather than pixels.
     /// The honest answer per case, not a guess — it decides whether the app
@@ -212,6 +214,10 @@ public enum Operation: Equatable, Sendable {
             return true                            // feColorMatrix
         case .square:
             return true                            // a <rect>
+        case .text:
+            // Glyph outlines as <path>, not <text> — see textAsSVGPaths for
+            // why a font the reader may not have is not an export.
+            return true
         }
     }
 
@@ -223,6 +229,7 @@ public enum Operation: Equatable, Sendable {
         case .invert:           return "Invert"
         case .square(let frac, _):
             return "Square (\(Int((frac * 100).rounded()))%)"
+        case .text(let spec):   return spec.label
         }
     }
 }
@@ -288,6 +295,8 @@ public func renderRaster(_ doc: Composition) -> Raster {
             canvasRaster = invertRGB(canvasRaster)
         case .square(let frac, let colour):
             canvasRaster = stampSquare(canvasRaster, frac: frac, colour: colour)
+        case .text(let spec):
+            canvasRaster = drawText(canvasRaster, spec, canvas: doc.canvas)
         }
     }
     return canvasRaster

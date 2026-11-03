@@ -157,6 +157,13 @@ public func renderVector(_ doc: Composition) -> String? {
             let side = (max(0, min(1, frac)) * c).rounded()
             let o = ((c - side) / 2).rounded()
             body += #"<rect x="\#(f(o))" y="\#(f(o))" width="\#(f(side))" height="\#(f(side))" fill="\#(hex(colour))"/>"#
+
+        case .text(let spec):
+            // Appended like the square: type is drawn ON what came before.
+            // The glyph positions come from the same `layoutText` the raster
+            // backend draws, so the two cannot disagree about where a letter
+            // sits — only about how its edge is antialiased.
+            if let paths = textAsSVGPaths(spec, canvas: doc.canvas) { body += paths }
         }
     }
 

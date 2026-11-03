@@ -272,6 +272,49 @@ backend changes.
   `HashMap` left them arbitrary. That is the one place the two deliberately
   differ, and only where the GTK side had no answer.
 
+## Traps in type
+
+- **`layoutText` is the only place a glyph's position is decided**, and both
+  backends read out of it — the raster one draws those glyphs, the vector one
+  turns the same ones into paths. That is why they cannot drift. Measured
+  against librsvg: 98.8% of pixels byte-identical, and at every one-pixel
+  offset the unshifted comparison is the minimum by roughly a factor of two,
+  which is what *aligned* looks like as opposed to *similar*.
+- **Type exports as outlines, never as `<text font-family="…">`.** The font
+  reference is smaller and stays editable, and it renders as a different
+  picture — or not at all — on a machine without the font. This app already
+  refuses to export a near-miss; type is where a near-miss is most visible.
+  The cost is a bigger file and no re-editing in Illustrator, and that is the
+  right trade for artwork.
+- **Glyphs go through Core Graphics, and that is the one deliberate exception
+  to "pixels are composed by hand".** Type *must* be antialiased; hinting and
+  subpixel positioning are precisely what a text renderer is for, and
+  hand-rasterising outlines to avoid CG would be reimplementing it badly. The
+  layer comes back un-premultiplied, the same as `Raster.load`, and is
+  composited in straight alpha — skip that and every letter's edge darkens the
+  moment it passes through the disc mask.
+- **`setShouldSmoothFonts(false)`.** Subpixel antialiasing bakes the
+  background's colour into the edge pixels, and this layer's background is
+  nothing at all, so it produces coloured fringes on transparency.
+- **Sizes and positions are fractions of the canvas, not points.** Changing
+  the output size then scales the type with it, which is what the rest of the
+  app already does with framing. Points would leave the same lettering
+  stranded in the corner of a 1000px square.
+- **The block is measured first-ascent to last-descent**, not as *n* line
+  heights. Any other way leaves a single line off-centre by the font's own
+  internal leading, which reads as a mistake because it is one.
+- **Core Text never fails to give you a font**, it substitutes — so
+  `fontIsAvailable` has to ask, comparing both the PostScript and the family
+  name (a family resolving to a face is a match, not a substitution).
+- **Glyph paths use `fill-rule="nonzero"`.** That is what a counter is wound
+  for: the hole in an "o" goes the other way round. Even-odd would also punch
+  a hole wherever two letters overlap.
+- **The blank canvas carries a vector source**, and that is what made type
+  worth having. Without it a composition built from nothing was refused for
+  "the source is not an SVG" even though every step in it had a vector form.
+  A white square *is* expressible as a white square; saying otherwise was
+  never honest, it was only never asked.
+
 ## Traps in batch
 
 - **The runner is `@MainActor` throughout, and must stay that way.** An SVG

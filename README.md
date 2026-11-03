@@ -94,8 +94,16 @@ Undo is a stack of compositions, so no operation needs its own inverse.
 - **Cover** or **Fit** framing. Changing the canvas size rescales the framing
   rather than re-cropping it.
 - **Build steps that stack**: a blank canvas to start from, **Invert** (RGB
-  only — a transparent pixel stays transparent), a **centred square**, and a
-  **mask**.
+  only — a transparent pixel stays transparent), a **centred square**,
+  **type**, and a **mask**.
+- **Type**, set in any installed font through the system font panel, sized and
+  positioned as fractions of the canvas so it scales with the output rather
+  than being stranded at a point size. It exports as **outlines, not as a font
+  reference** — an SVG that says `font-family` is a different picture on a
+  machine without that font, and this one is not.
+- A **blank canvas carries a vector form**, so a composition built from
+  nothing — type, a square, a mask — saves as a real SVG with no pixels
+  involved.
 - A **mask** — disc, rounded rectangle or chamfer, the latter two with an
   adjustable amount — inscribed either in the **canvas** or in the **artwork's**
   own bounds. The latter matters for a source that does not reach the canvas
@@ -125,7 +133,7 @@ Output is always PNG. Not a preference: the disc mask needs an alpha channel.
 it is about gestures, dialogs and what the screen actually shows — and because
 the bugs found here so far have all been in that gap.
 
-### Covered automatically (95 tests — 68 swift-testing, 27 XCTest)
+### Covered automatically (111 tests — 84 swift-testing, 27 XCTest)
 
 | Area | What is asserted |
 |---|---|
@@ -133,6 +141,7 @@ the bugs found here so far have all been in that gap.
 | Placement | Cover and Fit centring and scale; snapping to centre and edges; each axis independent; rescaling a canvas does not re-crop |
 | Drag | A slow drag escapes a snap zone; a small one is held by it; translation is divided by the view scale; a zero scale is refused |
 | Build steps | Invert leaves alpha alone; a stamped square is centred, opaque and clamped; the square has a vector form and is drawn over the artwork |
+| Type | The block centres on its point; size scales with the canvas; tracking widens about the centre; a second line stacks and the *block* stays centred; the colour is exact where coverage is full; the vector form is paths and names no font; both backends agree on where a glyph sits; a blank canvas can be saved as SVG; a missing font is reported rather than substituted silently |
 | Colour | HEX / RGB / HSL forms; `.gpl` reads named, unnamed and space-named swatches and round-trips; `.clr` round-trips through NSColorList; CSS uses swatch names; the JSON is the GTK app's shape |
 | Store | History and pins are recency-deduped and capped; a rename follows its pin and refuses a collision; a removed palette is unpinned; every field survives a file it has never seen |
 | Quantising | Dominant colours come back most-used first; transparent pixels are not colours; the representative is a colour the image contains |
@@ -147,6 +156,23 @@ app diverges on purpose, delete the test rather than weaken it** — a loosened
 assertion hides a regression; a deleted one records a decision.
 
 ### Verified so far
+
+**2026-11-03, type.** The raster and vector backends were rendered to the same
+400px square and compared pixel for pixel, the SVG through **librsvg** rather
+than this app's own WebKit — a wholly independent renderer, with no font
+installed, which is the point of exporting outlines.
+
+- **98.8% of pixels are byte-identical.** The 1.2% that differ are the glyphs'
+  own one-pixel perimeter; adding a disc mask adds ~1,500 more, which is its
+  circumference. Whole-image RMSE is 2.8%, and that figure is carried almost
+  entirely by a few hundred edge pixels swinging between black and white.
+- **They are aligned, not merely similar.** Comparing at every one-pixel
+  offset, (0, 0) is the minimum at 2.29% and each neighbour is roughly double
+  it (4.7–6.5%). A sub-pixel disagreement in the layout would not look like
+  that. Both backends read their positions out of the same `layoutText`, and
+  this is the measurement that says so.
+
+
 
 The checklist above is a template — its boxes stay empty and get re-run. This is
 the record of what has actually been exercised on real files.
@@ -290,7 +316,15 @@ what you did not.
 - [ ] A centred square stamps opaque, the slider moves it, and it covers
       transparent ground.
 - [ ] Blank canvas starts from white, and Overwrite is off (there is nothing
-      to overwrite).
+      to overwrite). **Save As offers SVG** — it is a vector source now.
+- [ ] Type appears, and the font panel changes the face.
+- [ ] The nine-way position grid moves it; the two sliders reach between them.
+- [ ] Changing the canvas size scales the type with it rather than leaving it
+      the same number of pixels.
+- [ ] A multi-line string stacks, and the *block* stays centred rather than
+      the first line.
+- [ ] An SVG saved with type opens in a browser and in a drawing app, on a
+      machine without the font, and looks the same.
 - [ ] The grid shows thirds, centre and the inscribed circle, and appears in
       no saved file.
 - [ ] The Source / Result rail shows the file on the left and the canvas on

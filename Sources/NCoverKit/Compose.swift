@@ -162,6 +162,24 @@ func composeAreaAveraged(_ src: Raster, _ p: Placement, canvas: Int) -> Raster {
     return dst
 }
 
+/// A blank canvas as a **source**, raster and vector together.
+///
+/// The vector half is what makes type worth having. Without it a composition
+/// that started from nothing could not export SVG — `vectorRefusal` would say
+/// "the source is not an SVG" even though every step in the list (a square,
+/// some type, a mask) has a perfectly good vector form. A white square *is*
+/// expressible as a white square, so saying otherwise was never honest; it
+/// was only never asked.
+public func blankSource(_ size: Int) -> Source {
+    let s = f(Double(size))
+    let svg = #"""
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \#(s) \#(s)" width="\#(s)" height="\#(s)">\#
+    <rect width="\#(s)" height="\#(s)" fill="#ffffff"/></svg>
+    """#
+    return Source(raster: blankCanvas(size),
+                  vector: VectorSource(svg: svg, width: Double(size), height: Double(size)))
+}
+
 /// A blank opaque-white square, the ground you build a label on. White because a
 /// record label is white far more often than not, and Invert reaches black in
 /// one click from here.

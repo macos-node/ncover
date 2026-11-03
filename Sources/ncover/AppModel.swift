@@ -40,6 +40,17 @@ final class AppModel: ObservableObject {
     @Published var squareOn = false            { didSet { rebuild() } }
     @Published var squareFrac: Double = 0.6    { didSet { rebuild() } }
     @Published var squareColour: Color = .black { didSet { rebuild() } }
+    /// Type. Sizes and positions are fractions of the canvas, so changing the
+    /// output size scales the type with it rather than leaving it stranded.
+    @Published var textOn = false              { didSet { rebuild() } }
+    @Published var textString = ""             { didSet { rebuild() } }
+    @Published var textFont = "Helvetica"      { didSet { rebuild() } }
+    @Published var textSize: Double = 0.2      { didSet { rebuild() } }
+    @Published var textColour: Color = .black  { didSet { rebuild() } }
+    @Published var textX: Double = 0.5         { didSet { rebuild() } }
+    @Published var textY: Double = 0.5         { didSet { rebuild() } }
+    @Published var textTracking: Double = 0    { didSet { rebuild() } }
+    @Published var textLineSpacing: Double = 1.2 { didSet { rebuild() } }
     @Published var maskShape: MaskKind = .disc { didSet { rebuild() } }
     /// Corner radius / chamfer inset, as a fraction of half the canvas. One
     /// control for both because they mean the same thing: how much corner goes.
@@ -263,12 +274,20 @@ final class AppModel: ObservableObject {
         }
         var foundSquare: (Double, RGB)?
         for case .square(let frac, let colour) in d.ops { foundSquare = (frac, colour) }
+        var foundText: TextSpec?
+        for case .text(let spec) in d.ops { foundText = spec }
         let foundInvert = d.ops.contains { if case .invert = $0 { return true }; return false }
         withControlsSilenced {
             invertOn = foundInvert
             squareOn = foundSquare != nil
             if let (frac, colour) = foundSquare {
                 squareFrac = frac; squareColour = Color(colour)
+            }
+            textOn = foundText != nil
+            if let t = foundText {
+                textString = t.string; textFont = t.font; textSize = t.size
+                textColour = Color(t.colour); textX = t.x; textY = t.y
+                textTracking = t.tracking; textLineSpacing = t.lineSpacing
             }
             discOn = found != nil
             if let f = foundFit { maskFit = f }
@@ -316,6 +335,9 @@ final class AppModel: ObservableObject {
         var out: [NCoverKit.Operation] = []
         if invertOn { out.append(.invert) }
         if squareOn { out.append(.square(frac: squareFrac, colour: squareColour.rgb)) }
+        // Type goes over the square — a label mark is the ground the wording
+        // sits on — and under the mask, which clips the finished picture.
+        if textOn, !textString.isEmpty { out.append(.text(textSpec)) }
         if discOn { out.append(.mask(mask, fill: outerFill, fit: maskFit)) }
         return out
     }
@@ -377,7 +399,7 @@ final class AppModel: ObservableObject {
         // The build controls describe the *previous* source; carrying them
         // over silently would apply a 60% square to a file you just opened.
         withControlsSilenced {
-            invertOn = false; squareOn = false; discOn = false
+            invertOn = false; squareOn = false; discOn = false; textOn = false
         }
         resetFraming()
     }
