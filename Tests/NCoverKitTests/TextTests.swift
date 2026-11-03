@@ -170,6 +170,52 @@ struct TextTests {
         #expect(!fontIsAvailable("NoSuchFontExistsHere"))
     }
 
+    @Test func theSizeSliderIsLogarithmicAndRoundTrips() {
+        for v in [0.02, 0.05, 0.2, 0.75, 1.0, 2.0] {
+            #expect(abs(textSizeFromSlider(textSizeSliderPosition(v)) - v) < 1e-9)
+        }
+        #expect(textSizeSliderPosition(TEXT_SIZE_MIN) == 0)
+        #expect(abs(textSizeSliderPosition(TEXT_SIZE_MAX) - 1) < 1e-12)
+
+        // The default lands halfway. Not a coincidence to preserve for its own
+        // sake — it is the check that the range is centred on the sizes people
+        // actually set, rather than on a round number.
+        #expect(abs(textSizeSliderPosition(0.2) - 0.5) < 0.001)
+
+        // Equal travel is equal ratio, which is the property that makes the
+        // bottom of the range usable at all.
+        let a = textSizeFromSlider(0.25) / textSizeFromSlider(0.0)
+        let b = textSizeFromSlider(0.75) / textSizeFromSlider(0.5)
+        #expect(abs(a - b) < 1e-9)
+    }
+
+    @Test func theSliderIsClampedAtBothEnds() {
+        #expect(textSizeFromSlider(-5) == TEXT_SIZE_MIN)
+        #expect(textSizeFromSlider(5) == TEXT_SIZE_MAX)
+        #expect(textSizeSliderPosition(0.0001) == 0)
+        #expect(abs(textSizeSliderPosition(99) - 1) < 1e-12)
+    }
+
+    @Test func typeLargerThanTheCanvasIsCroppedRatherThanRefused() {
+        // A letterform bleeding off all four edges is a deliberate thing to
+        // draw. It must not throw, and it must cover far more of the canvas
+        // than a modest size does. (Not "the centre pixel is marked" — at this
+        // size the middle of the square lands in the E's own counter, which is
+        // the point of letting type get this big.)
+        func inked(_ size: Double) -> Int {
+            var s = spec("E", size: size)
+            s.colour = RGB(0, 0, 0)
+            let out = drawText(blankCanvas(200), s, canvas: 200)
+            #expect(out.width == 200 && out.height == 200)
+            return stride(from: 0, to: out.px.count, by: 4)
+                .count { out.px[$0] < 200 }
+        }
+        let big = inked(TEXT_SIZE_MAX), small = inked(0.2)
+        #expect(small > 0)
+        #expect(big > small * 8)
+        #expect(big < 200 * 200, "cropped by the canvas, not filling it")
+    }
+
     @Test func sourceOverLeavesTheBottomWhereTheTopIsTransparent() {
         var top = Raster(empty: 2, height: 1)
         top.set(0, 0, RGBA(255, 0, 0, 255))

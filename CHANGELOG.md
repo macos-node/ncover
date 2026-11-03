@@ -8,6 +8,17 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Changed
+- Type can be set much larger: the size range now runs from 2% of the canvas
+  to **200%**, so a letterform can be bigger than the square that crops it.
+  It had stopped at 60%, which was short of filling the canvas at all.
+- That range is a hundredfold, so the slider is now **logarithmic** — equal
+  travel is equal ratio, and the small sizes stay controllable instead of
+  being crushed into the first tenth. The readout shows the resulting point
+  size beside the percentage.
+- Tracking reaches further both ways (−0.25 to 0.75). Letters touching is
+  something a monogram does on purpose.
+
 ## [0.3.0] — 2026-11-03
 
 ### Added

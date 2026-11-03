@@ -98,7 +98,8 @@ Undo is a stack of compositions, so no operation needs its own inverse.
   **type**, and a **mask**.
 - **Type**, set in any installed font through the system font panel, sized and
   positioned as fractions of the canvas so it scales with the output rather
-  than being stranded at a point size. It exports as **outlines, not as a font
+  than being stranded at a point size — from a 2% credit line to a letterform
+  at 200%, larger than the square that crops it. It exports as **outlines, not as a font
   reference** — an SVG that says `font-family` is a different picture on a
   machine without that font, and this one is not.
 - A **blank canvas carries a vector form**, so a composition built from

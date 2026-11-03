@@ -53,6 +53,39 @@ public struct TextSpec: Equatable, Sendable {
     }
 }
 
+// MARK: - the size control
+//
+// Size is a fraction of the canvas, and the useful range of that fraction is
+// enormous: a credit line at 3% and a single letterform bleeding off all four
+// edges at 200% are both things people set. A hundredfold range on a linear
+// slider is unusable at the bottom — the first tenth of the travel covers
+// everything from invisible to a caption — so the slider is logarithmic.
+
+/// Smallest and largest type, as fractions of the canvas side.
+///
+/// The top end is deliberately past 1.0: a letter larger than the square,
+/// cropped by it, is a deliberate thing to draw and not a mistake to prevent.
+public let TEXT_SIZE_MIN = 0.02
+public let TEXT_SIZE_MAX = 2.0
+
+/// Where a size sits on the slider, 0...1. Logarithmic, so equal travel is
+/// equal *ratio* — and the 0.2 default lands exactly halfway, which is the
+/// sign that the range is centred on the sizes people actually use.
+public func textSizeSliderPosition(_ size: Double) -> Double {
+    let v = min(max(size, TEXT_SIZE_MIN), TEXT_SIZE_MAX)
+    return log(v / TEXT_SIZE_MIN) / log(TEXT_SIZE_MAX / TEXT_SIZE_MIN)
+}
+
+/// The inverse.
+public func textSizeFromSlider(_ t: Double) -> Double {
+    TEXT_SIZE_MIN * pow(TEXT_SIZE_MAX / TEXT_SIZE_MIN, min(max(t, 0), 1))
+}
+
+/// Tracking's range. Negative far enough to set display lettering genuinely
+/// tight — letters touching is a thing a monogram does on purpose.
+public let TEXT_TRACKING_MIN = -0.25
+public let TEXT_TRACKING_MAX = 0.75
+
 /// One glyph, placed. `x`/`y` are the glyph's origin on the baseline in
 /// **canvas coordinates — y increasing downward**, like `Raster`.
 ///

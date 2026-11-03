@@ -346,23 +346,38 @@ private struct Inspector: View {
 
         LabeledContent("Size") {
             HStack(spacing: 8) {
-                Slider(value: $model.textSize, in: 0.02...0.6)
-                Text(String(format: "%.0f%%", model.textSize * 100))
-                    .monospacedDigit().foregroundStyle(.secondary)
-                    .frame(width: 38, alignment: .trailing)
+                // Logarithmic: the useful range runs from a 2% credit line to
+                // a letterform at 200% bleeding off every edge, and a hundred-
+                // fold range on a linear slider is unusable at the bottom.
+                Slider(value: Binding(
+                    get: { textSizeSliderPosition(model.textSize) },
+                    set: { model.textSize = textSizeFromSlider($0) }
+                ), in: 0...1)
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(String(format: "%.0f%%", model.textSize * 100))
+                        .monospacedDigit()
+                    // The points it actually comes out at, because that is
+                    // what you know a size by even when the model is a ratio.
+                    Text("\(Int((model.textSize * Double(model.canvas)).rounded())) pt")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
+                .foregroundStyle(.secondary)
+                .frame(width: 44, alignment: .trailing)
             }
         }
-        .tip("A fraction of the canvas, not points — so changing the output size scales the type with it instead of stranding it.")
+        .tip("A fraction of the canvas, not points — so changing the output size scales the type with it instead of stranding it. The slider is logarithmic, and runs past 100% so a letter can be larger than the square it is cropped by.")
 
         LabeledContent("Tracking") {
             HStack(spacing: 8) {
-                Slider(value: $model.textTracking, in: -0.1...0.5)
+                Slider(value: $model.textTracking,
+                       in: TEXT_TRACKING_MIN...TEXT_TRACKING_MAX)
                 Text(String(format: "%+.2f", model.textTracking))
                     .monospacedDigit().foregroundStyle(.secondary)
-                    .frame(width: 42, alignment: .trailing)
+                    .frame(width: 44, alignment: .trailing)
             }
         }
-        .tip("Letter spacing, as a fraction of the font size. Label lettering is usually set wider than body text.")
+        .tip("Letter spacing, as a fraction of the font size. Negative sets it tight — letters touching is something a monogram does on purpose; positive is how label lettering is usually set.")
 
         if model.textString.contains("\n") {
             LabeledContent("Line height") {

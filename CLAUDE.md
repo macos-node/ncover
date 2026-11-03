@@ -296,6 +296,16 @@ backend changes.
 - **`setShouldSmoothFonts(false)`.** Subpixel antialiasing bakes the
   background's colour into the edge pixels, and this layer's background is
   nothing at all, so it produces coloured fringes on transparency.
+- **The size slider is logarithmic, and that is not a flourish.** The useful
+  range is a hundredfold — a 2% credit line to a letterform at 200% bleeding
+  off every edge — and on a linear slider the first tenth of the travel covers
+  everything from invisible to a caption. Equal travel is equal *ratio*, and
+  the 0.2 default landing exactly halfway is the check that the range is
+  centred on the sizes people set rather than on a round number. The readout
+  shows the resulting **points** beside the percentage, because that is what a
+  size is known by even when the model is a ratio.
+- **The range runs past 100% on purpose.** Type larger than the square it is
+  cropped by is a deliberate thing to draw, so it is not clamped to "fits".
 - **Sizes and positions are fractions of the canvas, not points.** Changing
   the output size then scales the type with it, which is what the rest of the
   app already does with framing. Points would leave the same lettering
