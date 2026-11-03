@@ -401,6 +401,23 @@ backend changes.
   `/` in common are refused, because mirroring against the root of the disk is
   not mirroring.
 
+## Installing
+
+- **`make install` goes to `/Applications`**, which is where a Mac keeps
+  applications. It defaulted to `~/Applications` for a while, carried over
+  from the Linux side of the suite where `PREFIX=$HOME/.local` is the
+  convention — which is the exact reflex this file warns about at the top,
+  committed in the Makefile. `/Applications` is group-writable by `admin` on
+  a stock Mac, so it needs no sudo; the target checks and says what to do
+  instead when it is not writable.
+- **Two copies under one bundle identifier is the thing to avoid.** Launch
+  Services will happily open either, and Finder will show whichever icon it
+  cached — the stale-build trap. `install` warns when a copy is left in the
+  other location, and `uninstall` unregisters what it removes.
+- **`ditto`, not `cp -R`**, here as well as for the disk image: it is the copy
+  documented to carry a bundle's signature, and an unsigned bundle renders
+  every SVG blank without saying so.
+
 ## Releasing
 
 - **`make dmg` mounts the image it just wrote and verifies the app inside

@@ -8,6 +8,16 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Changed
+- `make install` now installs to **`/Applications`**, which is where a Mac
+  keeps applications. It had defaulted to `~/Applications`, carried over from
+  the Linux side of the suite. Override with `PREFIX=$HOME/Applications`.
+- It copies with `ditto` rather than `cp -R`, for the same reason the disk
+  image does: that is the copy documented to carry a bundle's signature.
+- It warns when a copy is left behind in the other location — two bundles
+  sharing one identifier is how macOS starts launching the wrong build — and
+  `make uninstall` now unregisters what it removes.
+
 ## [0.5.1] — 2026-11-03
 
 ### Added

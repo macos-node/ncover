@@ -32,7 +32,7 @@ make app     # build n.cover.app
 make dmg     # build a disk image (Apple silicon)
 make run     # build and launch
 make test    # run the rule tests
-make install # copy to ~/Applications
+make install # copy to /Applications (PREFIX=$HOME/Applications for just you)
 make icon    # regenerate ncover.icns from icon.svg (needs rsvg-convert)
 make version V=0.2.0   # bump the version before tagging
 ```

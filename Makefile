@@ -8,7 +8,21 @@ ICNS     = Resources/ncover.icns
 ICONSET  = .build/ncover.iconset
 CONFIG   = release
 BUILDDIR = .build/$(CONFIG)
-PREFIX   = $(HOME)/Applications
+# /Applications, which is where a Mac keeps applications.
+#
+# This used to default to ~/Applications, carried over from the Linux side of
+# the suite where `PREFIX=$HOME/.local` is the convention. It is not the
+# convention here, and the cost of being half-right was two copies of the app
+# under one bundle identifier — exactly the stale-build trap this repo warns
+# about elsewhere.
+#
+# `?=`, so an environment variable can still set it, and /Applications is
+# group-writable by `admin` on a stock Mac, so this needs no sudo. Anyone it
+# does not suit: `make install PREFIX=$HOME/Applications`.
+PREFIX  ?= /Applications
+# The other place it might already be, to warn about rather than silently
+# leave behind.
+OTHER    = $(if $(filter /Applications,$(PREFIX)),$(HOME)/Applications,/Applications)
 
 # Read back from the bundle's own plist, so the disk image can never claim a
 # version the app inside it does not.
@@ -117,15 +131,37 @@ run: app
 test:
 	swift test
 
-## Install to ~/Applications
+## Install to /Applications (override with PREFIX=...)
 install: app
-	@mkdir -p "$(PREFIX)"
+	@mkdir -p "$(PREFIX)" 2>/dev/null || true
+	@test -w "$(PREFIX)" || { \
+	  echo "cannot write $(PREFIX)."; \
+	  echo "On a stock Mac /Applications is group-writable by 'admin'; if this"; \
+	  echo "account is not an admin, install for yourself instead:"; \
+	  echo "    make install PREFIX=\$$HOME/Applications"; \
+	  exit 1; }
 	@rm -rf "$(PREFIX)/$(APP)"
-	@cp -R "$(APP)" "$(PREFIX)/$(APP)"
+	@# ditto, not cp -R: the same reason as the disk image. cp -R is not
+	@# documented to carry a bundle's signature across, and an unsigned
+	@# bundle renders every SVG blank without saying so.
+	@ditto "$(APP)" "$(PREFIX)/$(APP)"
 	@echo "installed $(PREFIX)/$(APP)"
+	@# Two copies under one bundle identifier is how Launch Services starts
+	@# opening the wrong build and Finder starts showing a stale icon.
+	@if [ -d "$(OTHER)/$(APP)" ]; then \
+	  echo; \
+	  echo "NOTE: another copy is still at $(OTHER)/$(APP)"; \
+	  echo "Two copies share one bundle id, so macOS may launch either one."; \
+	  echo "Remove it with:  make uninstall PREFIX=$(OTHER)"; \
+	fi
 
+## Remove it from PREFIX
 uninstall:
-	@rm -rf "$(PREFIX)/$(APP)"
+	@if [ -d "$(PREFIX)/$(APP)" ]; then \
+	  rm -rf "$(PREFIX)/$(APP)" && echo "removed $(PREFIX)/$(APP)"; \
+	  lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister; \
+	  [ -x "$$lsregister" ] && "$$lsregister" -u "$(PREFIX)/$(APP)" 2>/dev/null || true; \
+	else echo "nothing at $(PREFIX)/$(APP)"; fi
 
 clean:
 	swift package clean
@@ -139,6 +175,6 @@ help:
 	@echo "  version    - Bump the version: make version V=x.y.z"
 	@echo "  run        - Build and launch"
 	@echo "  test       - Run the ported rule tests"
-	@echo "  install    - Copy to ~/Applications"
-	@echo "  uninstall  - Remove from ~/Applications"
+	@echo "  install    - Copy to /Applications (PREFIX=... to change)"
+	@echo "  uninstall  - Remove it from PREFIX"
 	@echo "  clean      - Remove build products"
