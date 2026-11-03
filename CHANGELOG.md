@@ -8,6 +8,21 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Added
+- **Batch previews itself.** Four outputs render as soon as there is a recipe
+  and something to apply it to, and follow every change to the scope, filter
+  or recipe — through the same renderer a run uses. A preview you have to
+  press is one you can forget to press. The Preview button still renders the
+  full twelve.
+
+### Fixed
+- **The disc mask is off by default in batch.** `Recipe` has said "the disc
+  is an option, not the point — resizing a folder of covers is a job on its
+  own" from the start, and the batch sheet contradicted it in the one place
+  that mattered: a run over a discography of covers produced discs.
+- The batch sheet can grow, and opens taller. The survey plus two previews
+  did not fit in 640 points.
+
 ## [0.5.0] — 2026-11-03
 
 ### Added

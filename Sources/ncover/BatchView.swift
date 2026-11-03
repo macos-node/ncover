@@ -92,6 +92,7 @@ struct BatchView: View {
                 }
 
                 scopeSurvey
+                autoPreview
                 if !run.thumbs.isEmpty { previewSheet }
                 if !run.rows.isEmpty { results }
             }
@@ -100,12 +101,52 @@ struct BatchView: View {
             Divider()
             footer
         }
-        .frame(width: 620, height: 640)
+        .frame(minWidth: 620, idealWidth: 660, minHeight: 600, idealHeight: 760)
         .alert("Batch", isPresented: Binding(
             get: { run.error != nil }, set: { if !$0 { run.error = nil } }
         )) {
             Button("OK", role: .cancel) { run.error = nil }
         } message: { Text(run.error ?? "") }
+    }
+
+    /// The recipe, applied to the first few real files, without being asked.
+    ///
+    /// A preview you have to press is a preview you can forget to press — and
+    /// forgetting it is how a folder of covers comes out as discs. This sits
+    /// directly under the controls that decide it and follows them.
+    @ViewBuilder
+    private var autoPreview: some View {
+        if !run.samples.isEmpty || run.sampling {
+            Section("What it will look like") {
+                HStack(alignment: .top, spacing: 10) {
+                    ForEach(run.samples) { t in
+                        VStack(spacing: 3) {
+                            ZStack {
+                                MiniChecker()
+                                if let i = t.image {
+                                    Image(nsImage: i).resizable().aspectRatio(contentMode: .fit)
+                                } else {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                            .frame(width: 76, height: 76)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.separator))
+                            Text(t.label)
+                                .font(.caption2).lineLimit(1).truncationMode(.head)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 76)
+                        }
+                        .tip(t.error ?? t.label)
+                    }
+                    if run.sampling { ProgressView().controlSize(.small).padding(.top, 28) }
+                    Spacer()
+                }
+                Text("The first \(BatchRunner.autoPreviewCount), through the same renderer the run uses. Preview shows \(BatchRunner.previewCount).")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+        }
     }
 
     /// What the run would touch, before anything is rendered. Walking
@@ -153,11 +194,14 @@ struct BatchView: View {
         }
         // Re-survey when the scope or the filter changes. The id covers all
         // three inputs, so no change can leave a stale count on screen.
-        .task(id: "\(run.scope.rawValue)|\(run.sourceFolder?.path ?? "")|\(run.needle)") {
-            // A beat, so a walk does not start on every keystroke.
-            try? await Task.sleep(for: .milliseconds(250))
+        .task(id: run.sampleKey) {
+            // A beat, so neither a walk nor a render starts on every keystroke
+            // or every notch of a slider.
+            try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             await run.refreshSurvey()
+            guard !Task.isCancelled else { return }
+            await run.refreshSamples()
         }
     }
 

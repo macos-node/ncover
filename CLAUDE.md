@@ -377,6 +377,18 @@ backend changes.
   Throwing them away and showing folder paths would be a much worse answer to
   "what will this touch" — and the folder often does not match the record, as
   a compilation filed under Various Artists shows.
+- **The batch preview renders itself.** A preview you have to press is a
+  preview you can forget to press, and forgetting it is how a folder of
+  covers comes out as discs. Four samples render on every settled change to
+  the scope, the filter or the recipe, through the same `renderOne` a run
+  uses; the Preview button still does the full twelve. `sampleKey` gathers
+  every input into one value so no change can leave a stale picture beside
+  the controls that no longer made it.
+- **The disc is off by default in batch.** `Recipe` has said "the disc is an
+  option, not the point — resizing a folder of covers is a job on its own"
+  since the beginning, and the batch sheet defaulted it on, which is the one
+  place that sentence mattered. If a default here ever contradicts the type's
+  own documentation again, the documentation is the one that is right.
 - **A preview must show its failures.** A contact sheet that quietly omits the
   files that would fail is a preview that lies about what the run will do.
 - **Each result row carries its reason.** "31 failed" is unactionable and

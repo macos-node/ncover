@@ -49,7 +49,11 @@ final class BatchRunner: ObservableObject {
     @Published var needle = ""
     @Published var canvas = CANVAS_DEFAULT
     @Published var framing: Framing = .cover
-    @Published var discOn = true
+    /// Off by default, and the Recipe type next door says why: "the disc is an
+    /// option, not the point — resizing a folder of covers is a job on its
+    /// own". Defaulting it on contradicted that in the one place it mattered,
+    /// and a batch of covers came out as discs because the default said so.
+    @Published var discOn = false
     @Published var fill: AppModel.FillKind = .alpha
     @Published var fillColour: Color = .white
     @Published var dryRun = false
@@ -77,9 +81,23 @@ final class BatchRunner: ObservableObject {
     /// A silent truncation reads as "that was everything".
     static let resultRows = 300
 
-    /// How many outputs a preview renders. A contact sheet is a SAMPLE you
-    /// eyeball to catch "my recipe is wrong" before it touches 500 files.
+    /// How many outputs the full preview renders. A contact sheet is a SAMPLE
+    /// you eyeball to catch "my recipe is wrong" before it touches 500 files.
     static let previewCount = 12
+
+    /// How many render themselves, unasked, as soon as there is a recipe and
+    /// something to apply it to.
+    ///
+    /// Four rather than twelve because this runs on every change to the
+    /// recipe — and it runs at all because a preview you have to ask for is a
+    /// preview you can forget to ask for. A folder of covers came out as
+    /// discs that way, and the Run button cannot say "37 of them, as discs".
+    static let autoPreviewCount = 4
+
+    /// The always-on sample. Separate from `thumbs` so pressing Preview for
+    /// the full twelve does not fight the automatic four.
+    @Published private(set) var samples: [Thumb] = []
+    @Published private(set) var sampling = false
 
     var manifestPath: URL? { publishedManifestPath() }
 
@@ -150,6 +168,42 @@ final class BatchRunner: ObservableObject {
         // The filter may have moved on while we walked; the last word wins.
         guard needle == self.needle else { return }
         survey = result
+    }
+
+    /// Render the first few outputs, unasked.
+    ///
+    /// Through the same `renderOne` a run uses, so it is a sample of the real
+    /// thing rather than an impression of it. Cancellable, because it is
+    /// driven by controls somebody is still moving.
+    func refreshSamples() async {
+        guard blocker == nil, let scope = try? currentScope() else {
+            samples = []; return
+        }
+        let hits = Array(findImages(in: scope, needle: needle).prefix(Self.autoPreviewCount))
+        guard !hits.isEmpty else { samples = []; return }
+        sampling = true
+        defer { sampling = false }
+        let r = recipe
+        var out: [Thumb] = []
+        for hit in hits {
+            if Task.isCancelled { return }
+            let label = relativePath(of: hit, under: scope.strip)
+            do {
+                out.append(Thumb(label: label, image: try await renderOne(hit, recipe: r).nsImage(),
+                                 error: nil))
+            } catch {
+                out.append(Thumb(label: label, image: nil, error: error.localizedDescription))
+            }
+        }
+        guard !Task.isCancelled else { return }
+        samples = out
+    }
+
+    /// Everything a sample depends on, as one value — so no change can leave a
+    /// stale picture on screen next to the controls that no longer made it.
+    var sampleKey: String {
+        [scope.rawValue, sourceFolder?.path ?? "", needle, String(canvas), framing.rawValue,
+         discOn ? "disc" : "plain", fill.rawValue, fillColour.rgb.hex].joined(separator: "|")
     }
 
     // MARK: - choosing folders
@@ -257,6 +311,7 @@ final class BatchRunner: ObservableObject {
         total = 0; done = 0; ok = 0; failed = 0
         rows = []; thumbs = []; error = nil
     }
+
 
     private func record(_ row: Row) {
         guard rows.count < Self.resultRows else { return }

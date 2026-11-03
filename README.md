@@ -128,8 +128,9 @@ Undo is a stack of compositions, so no operation needs its own inverse.
 - **Batch** one recipe over a folder, or over every release **ndisc** has
   published. Choosing a scope surveys it first — how many images, in which
   releases, named from the manifest, and how many releases matched nothing —
-  updating as you type the filter. Then a **preview contact sheet** and a
-  **dry run**. It never
+  updating as you type the filter. Then four outputs render **by themselves**,
+  following the recipe as you change it, with a fuller **contact sheet** and
+  a **dry run** a click away. It never
   writes over your originals, and refuses an output folder that would make the
   next run eat its own output.
 - Undo and redo the whole edit history (⌘Z / ⇧⌘Z).
@@ -354,6 +355,8 @@ what you did not.
       run then writes.
 - [ ] Typing in the filter changes the count, and an impossible filter says
       so rather than showing nothing.
+- [ ] Four samples appear without being asked for, and change when the
+      recipe does — turning the disc mask on and off is the quickest check.
 - [ ] Preview renders the first twelve, including the failures.
 - [ ] A dry run writes nothing and still reports a file that would fail.
 - [ ] A real run mirrors the source tree, suffixes `-disc` only with a mask,
