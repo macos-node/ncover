@@ -8,6 +8,8 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-03
+
 ### Added
 - **Use as template.** The source becomes a faint tracing guide on the canvas
   and is left out of the file. Drag and zoom still move it, and because it
@@ -134,7 +136,8 @@ First release.
 - Overwrite the original in place, guarded to PNG sources only.
 - Undo and redo across the whole edit history.
 
-[Unreleased]: https://github.com/macos-node/ncover/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/macos-node/ncover/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/macos-node/ncover/releases/tag/v0.4.0
 [0.3.1]: https://github.com/macos-node/ncover/releases/tag/v0.3.1
 [0.3.0]: https://github.com/macos-node/ncover/releases/tag/v0.3.0
 [0.2.0]: https://github.com/macos-node/ncover/releases/tag/v0.2.0
