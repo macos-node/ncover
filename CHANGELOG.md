@@ -8,6 +8,8 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-11-03
+
 ### Added
 - **Batch previews itself.** Four outputs render as soon as there is a recipe
   and something to apply it to, and follow every change to the scope, filter
@@ -163,7 +165,8 @@ First release.
 - Overwrite the original in place, guarded to PNG sources only.
 - Undo and redo across the whole edit history.
 
-[Unreleased]: https://github.com/macos-node/ncover/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/macos-node/ncover/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/macos-node/ncover/releases/tag/v0.5.1
 [0.5.0]: https://github.com/macos-node/ncover/releases/tag/v0.5.0
 [0.4.0]: https://github.com/macos-node/ncover/releases/tag/v0.4.0
 [0.3.1]: https://github.com/macos-node/ncover/releases/tag/v0.3.1
