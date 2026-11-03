@@ -119,6 +119,9 @@ final class AppModel: ObservableObject {
     /// Transient confirmation — "copied", "installed in ~/Library/Colors".
     /// Not an error, so it does not belong in the alert.
     @Published var note: String?
+    /// Which palette names are currently attached to the shared Colours panel,
+    /// so a renamed or deleted one can be detached rather than lingering.
+    var attachedLists: Set<String> = []
 
     /// A grid over the canvas, for judging a placement against thirds and
     /// centre. Preview only, like the backdrop.

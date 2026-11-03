@@ -8,6 +8,16 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Changed
+- Every colour well — the square's, the mask's, both gradient stops, batch's —
+  now has your own colours one click away: the current colour, the recent ones
+  and the pinned palettes, in a popover beside the well.
+- The app's palettes are attached to the shared Colours panel **app-wide**, not
+  only when the Colour view opens it. Every `ColorPicker` opens that same
+  panel, so attaching on our own Show Colours left the palettes missing from
+  exactly the wells that wanted them. A renamed or deleted palette is now
+  detached rather than lingering in the panel for the session.
+
 ## [0.2.0] — 2026-11-03
 
 Feature parity with the GTK sibling, plus what only macOS can do.

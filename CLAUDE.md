@@ -233,6 +233,14 @@ backend changes.
   colour you actually chose. The panel moves `current` only, and a Keep button
   says when a panel colour is a pick. The same reasoning is why the backdrop
   has its own screen-picker entry point: a viewing condition is not a pick.
+- **Every `ColorPicker` in the app opens the same shared `NSColorPanel`**, so
+  the palettes are attached app-wide (`syncPalettesToColorPanel`, called once
+  the window is up and again whenever the palettes themselves change — not on
+  every colour picked, which `touch` also fires on). Attaching only when the
+  Colour view opened the panel left them missing from exactly the wells that
+  wanted them. Attaching a name that is already attached replaces it; a
+  **renamed or deleted** palette has to be detached by hand, which is what
+  `attachedLists` is for.
 - **`ColorPanelBridge` is target/action, and that is not a style choice.**
   `NSColorPanel` is one of the oldest classes in AppKit and has never grown a
   publisher. One shared instance, because the panel is a singleton and two

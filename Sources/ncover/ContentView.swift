@@ -56,7 +56,11 @@ struct ContentView: View {
         } message: { Text(model.error ?? "") }
         // A confirmation is not an error and does not get a dialog to dismiss.
         .overlay(alignment: .bottom) { NoteBanner() }
-        .sheet(isPresented: $model.showBatch) { BatchView() }
+        .sheet(isPresented: $model.showBatch) { BatchView().environmentObject(model) }
+        // Once the app is up, not in `init`: touching NSColorPanel.shared
+        // creates the panel, and there is no reason to pay for that before
+        // there is a window.
+        .task { model.syncPalettesToColorPanel() }
     }
 
     @ToolbarContentBuilder
@@ -245,7 +249,8 @@ private struct Inspector: View {
                         }
                     }
                     .tip("The square's side, as a fraction of the canvas.")
-                    ColorPicker("Square colour", selection: $model.squareColour, supportsOpacity: false)
+                    PaletteWell(label: "Square colour", colour: $model.squareColour,
+                                help: "The stamped square's colour. The swatch button beside the well holds your picked colours and pinned palettes.")
                 }
 
                 Button("Blank canvas") { model.blankCanvas() }
@@ -355,12 +360,13 @@ private struct Inspector: View {
 
         switch model.fillKind {
         case .solid:
-            ColorPicker("Colour", selection: $model.solid, supportsOpacity: false)
+            PaletteWell(label: "Colour", colour: $model.solid,
+                        help: "What fills outside the mask.")
         case .gradient:
-            ColorPicker("At the rim", selection: $model.gradInner, supportsOpacity: false)
-                .tip("The colour where the fill meets the mask's edge.")
-            ColorPicker("At the corner", selection: $model.gradOuter, supportsOpacity: false)
-                .tip("The colour reached at the very corner of the canvas.")
+            PaletteWell(label: "At the rim", colour: $model.gradInner,
+                        help: "The colour where the fill meets the mask's edge.")
+            PaletteWell(label: "At the corner", colour: $model.gradOuter,
+                        help: "The colour reached at the very corner of the canvas.")
         case .alpha, .white:
             EmptyView()
         }

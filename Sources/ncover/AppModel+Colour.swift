@@ -28,12 +28,59 @@ extension AppModel {
     func touch(_ change: (inout ColorData) -> Void) {
         var d = data
         change(&d)
+        let palettesChanged = d.palettes != data.palettes
         data = d
+        // Only when the palettes themselves moved. `touch` also fires on every
+        // colour picked, and re-attaching a dozen colour lists per eyedropper
+        // click is work nobody asked for.
+        if palettesChanged { syncPalettesToColorPanel() }
         do {
             try saveColorData(d)
         } catch {
             self.error = "Could not save your palettes: \(error.localizedDescription)"
         }
+    }
+
+    /// Put this app's palettes into the system Colours panel, and take away the
+    /// ones that are no longer ours.
+    ///
+    /// Done app-wide rather than only when *we* open the panel, because every
+    /// `ColorPicker` in the app opens the same shared panel — the square's
+    /// colour well, the mask's, the gradient stops, batch's. Attaching only on
+    /// our own Show Colours left the palettes missing from exactly the wells
+    /// that wanted them.
+    ///
+    /// Attaching a list whose name is already attached replaces it, which is
+    /// what we want after an edit; a *renamed or deleted* palette has to be
+    /// detached by hand or its old name lingers in the panel for the session.
+    func syncPalettesToColorPanel() {
+        let panel = NSColorPanel.shared
+        let wanted = Set(data.palettes.map(\.name))
+        for name in attachedLists.subtracting(wanted) {
+            panel.detachColorList(NSColorList(name: name))
+        }
+        for pal in data.palettes {
+            panel.attachColorList(colorList(for: pal))
+        }
+        attachedLists = wanted
+    }
+
+    /// One palette as an `NSColorList`. A list is a *dictionary*, so two
+    /// swatches under one key would silently become one — a duplicate gets a
+    /// suffix rather than being lost.
+    private func colorList(for pal: Palette) -> NSColorList {
+        let list = NSColorList(name: pal.name)
+        var used = Set<String>()
+        for sw in pal.colors {
+            var key = sw.caption
+            while used.contains(key) { key += " " }
+            used.insert(key)
+            list.setColor(NSColor(srgbRed: Double(sw.rgb.r) / 255,
+                                  green: Double(sw.rgb.g) / 255,
+                                  blue: Double(sw.rgb.b) / 255, alpha: 1),
+                          forKey: key)
+        }
+        return list
     }
 
     // MARK: - picking
@@ -82,22 +129,7 @@ extension AppModel {
     func showColorPanel() {
         let panel = NSColorPanel.shared
         panel.showsAlpha = false
-        for pal in data.palettes {
-            // A list has to be named and added; attaching the same name twice
-            // replaces it, which is what we want after an edit.
-            let list = NSColorList(name: pal.name)
-            var used = Set<String>()
-            for sw in pal.colors {
-                var key = sw.caption
-                while used.contains(key) { key += " " }
-                used.insert(key)
-                list.setColor(NSColor(srgbRed: Double(sw.rgb.r) / 255,
-                                      green: Double(sw.rgb.g) / 255,
-                                      blue: Double(sw.rgb.b) / 255, alpha: 1),
-                              forKey: key)
-            }
-            panel.attachColorList(list)
-        }
+        syncPalettesToColorPanel()
         if let c = current {
             panel.color = NSColor(srgbRed: Double(c.r) / 255, green: Double(c.g) / 255,
                                   blue: Double(c.b) / 255, alpha: 1)

@@ -83,7 +83,8 @@ struct BatchView: View {
                         }
                         .pickerStyle(.segmented)
                         if run.fill == .solid {
-                            ColorPicker("Colour", selection: $run.fillColour, supportsOpacity: false)
+                            PaletteWell(label: "Colour", colour: $run.fillColour,
+                                        help: "What fills outside the mask in every output.")
                         }
                     }
                     Text("Every output is a PNG. Not a preference — the disc mask needs an alpha channel.")
