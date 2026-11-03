@@ -56,6 +56,7 @@ struct ContentView: View {
         } message: { Text(model.error ?? "") }
         // A confirmation is not an error and does not get a dialog to dismiss.
         .overlay(alignment: .bottom) { NoteBanner() }
+        .sheet(isPresented: $model.showBatch) { BatchView() }
     }
 
     @ToolbarContentBuilder
@@ -75,6 +76,12 @@ struct ContentView: View {
         // The two write actions carry visible labels. They are the
         // consequential pair, one of them irreversibly so, and "you can
         // hover to find out what destroys your file" is not a design.
+        ToolbarItem {
+            Button { model.showBatch = true } label: {
+                Label("Batch", systemImage: "square.stack.3d.down.right")
+            }
+            .help("Run one recipe over a folder, or over every release ndisc has published. Never writes over your originals.")
+        }
         ToolbarItem {
             Button { model.saveAs() } label: {
                 Label("Save As…", systemImage: "square.and.arrow.down")

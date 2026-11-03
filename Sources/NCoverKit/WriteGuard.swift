@@ -3,6 +3,7 @@ import Foundation
 public enum WriteGuardError: LocalizedError, Equatable {
     case outputIsSource
     case outputInsideSource
+    case sourceInsideOutput
     case overwriteNotPNG(String)
 
     public var errorDescription: String? {
@@ -11,6 +12,8 @@ public enum WriteGuardError: LocalizedError, Equatable {
             return "The output folder is the source folder. Batch never writes over your originals."
         case .outputInsideSource:
             return "The output folder is inside the source folder. The next run would batch its own output."
+        case .sourceInsideOutput:
+            return "The source folder is inside the output folder. Choose an output folder beside it, not above it."
         case .overwriteNotPNG(let ext):
             return "Overwrite replaces a PNG in place. This source is .\(ext), and saving it as PNG under its own name would silently change the format."
         }
@@ -35,6 +38,12 @@ public func guardBatch(source: URL, output: URL) throws {
     let oParts = o.pathComponents
     if oParts.count > sParts.count, Array(oParts.prefix(sParts.count)) == sParts {
         throw WriteGuardError.outputInsideSource
+    }
+    // And the other way round. Nothing of the user's would be overwritten, but
+    // a run would write its output over the folder the originals sit in and
+    // the next one would read it back — the same compounding, upside down.
+    if sParts.count > oParts.count, Array(sParts.prefix(oParts.count)) == oParts {
+        throw WriteGuardError.sourceInsideOutput
     }
 }
 

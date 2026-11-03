@@ -135,6 +135,13 @@ struct GuardTests {
         }
     }
 
+    @Test func refusesSourceNestedInsideOutput() {
+        #expect(throws: WriteGuardError.sourceInsideOutput) {
+            try guardBatch(source: URL(fileURLWithPath: "/tmp/out/art"),
+                           output: URL(fileURLWithPath: "/tmp/out"))
+        }
+    }
+
     @Test func allowsASiblingOutput() throws {
         try guardBatch(source: URL(fileURLWithPath: "/tmp/lib"),
                        output: URL(fileURLWithPath: "/tmp/out"))
