@@ -1,5 +1,4 @@
 import AppKit
-import AppKit
 import SwiftUI
 
 /// Turns on mouse-moved events for every window.
@@ -41,6 +40,21 @@ struct NCoverApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open…") { model.open() }.keyboardShortcut("o")
+                Button("Browse Folder…") { model.openFolder() }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
+                Button("Blank Canvas") { model.blankCanvas() }
+                    .keyboardShortcut("n")
+                Divider()
+                // Walking the folder has a menu home as well as the arrow
+                // keys, because a shortcut nobody can find is a shortcut
+                // nobody uses — and the arrows only work with the canvas
+                // focused, which is not discoverable either.
+                Button("Previous Image") { model.step(-1) }
+                    .keyboardShortcut("[", modifiers: .command)
+                    .disabled(model.folderCount < 2)
+                Button("Next Image") { model.step(1) }
+                    .keyboardShortcut("]", modifiers: .command)
+                    .disabled(model.folderCount < 2)
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo") { model.undo() }
@@ -49,6 +63,20 @@ struct NCoverApp: App {
                 Button("Redo") { model.redo() }
                     .keyboardShortcut("z", modifiers: [.command, .shift])
                     .disabled(!model.canRedo)
+            }
+            CommandMenu("Colour") {
+                Button("Pick from Screen…") { model.pickFromScreen() }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                Button("Show Colours…") { model.showColorPanel() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                Divider()
+                Button("Copy Colour") { model.copyCurrent() }
+                    .keyboardShortcut("c", modifiers: [.command, .option])
+                    .disabled(model.current == nil)
+                Button("Import Palette…") { model.importPalette() }
+                Divider()
+                Button("Batch…") { model.showBatch = true }
+                    .keyboardShortcut("b", modifiers: [.command, .shift])
             }
             CommandGroup(replacing: .saveItem) {
                 Button("Save As…") { model.saveAs() }

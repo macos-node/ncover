@@ -26,6 +26,7 @@ struct CanvasView: View {
                             .resizable()
                             .interpolation(.none)       // show the pixels we actually wrote
                             .frame(width: side, height: side)
+                        if model.showGrid { grid(side: side) }
                         guides(side: side)
                     }
                     .frame(width: side, height: side)
@@ -33,14 +34,14 @@ struct CanvasView: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { v in
-                                guard !model.samplingBackdrop else { return }
+                                guard !model.picking else { return }
                                 model.beginDrag()
                                 model.dragTo(v.translation, viewScale: viewScale)
                             }
                             .onEnded { v in
-                                if model.samplingBackdrop {
-                                    model.sampleBackdrop(canvasX: v.location.x / viewScale,
-                                                         canvasY: v.location.y / viewScale)
+                                if model.picking {
+                                    model.samplePixel(canvasX: v.location.x / viewScale,
+                                                      canvasY: v.location.y / viewScale)
                                 } else {
                                     model.endDrag()
                                 }
@@ -53,12 +54,7 @@ struct CanvasView: View {
                             .onChanged { v in model.zoom(by: 1 + (v.magnification - 1) * 0.06) }
                             .onEnded { _ in model.endZoom() }
                     )
-                    .tip(model.samplingBackdrop
-                          ? "Click a pixel to make it the backdrop colour."
-                          // Short on purpose: this one fires whenever the
-                          // pointer rests anywhere on the artwork, so a
-                          // paragraph here is a paragraph draped over the work.
-                          : "Drag to move, pinch to zoom. Snaps to the centre and edges.")
+                    .tip(Self.canvasTip(model.canvasPick))
                 } else {
                     VStack(spacing: 10) {
                         Image(systemName: "photo.on.rectangle.angled")
@@ -73,7 +69,51 @@ struct CanvasView: View {
                 if model.busy { ProgressView().controlSize(.large) }
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            // The arrow keys walk the folder, which needs the canvas to be
+            // focusable — a key press with nowhere to land does nothing and
+            // says nothing about why. The menu carries ⌘[ and ⌘] for the same
+            // actions, so this is the convenience rather than the only way.
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(.leftArrow) { model.step(-1); return .handled }
+            .onKeyPress(.rightArrow) { model.step(1); return .handled }
+            .onKeyPress(.upArrow) { model.step(-1); return .handled }
+            .onKeyPress(.downArrow) { model.step(1); return .handled }
         }
+    }
+
+    /// Short on purpose: this one fires whenever the pointer rests anywhere on
+    /// the artwork, so a paragraph here is a paragraph draped over the work.
+    private static func canvasTip(_ pick: AppModel.CanvasPick) -> String {
+        switch pick {
+        case .backdrop: return "Click a pixel to make it the backdrop colour."
+        case .colour:   return "Click a pixel to pick its colour."
+        case .off:      return "Drag to move, pinch to zoom. Snaps to the centre and edges."
+        }
+    }
+
+    /// Thirds and centre. Preview only, like the backdrop — a guide you can see
+    /// through is worth more than one you have to remember the position of.
+    @ViewBuilder
+    private func grid(side: Double) -> some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            var thirds = Path()
+            for f in [1.0 / 3, 2.0 / 3] {
+                thirds.move(to: CGPoint(x: w * f, y: 0)); thirds.addLine(to: CGPoint(x: w * f, y: h))
+                thirds.move(to: CGPoint(x: 0, y: h * f)); thirds.addLine(to: CGPoint(x: w, y: h * f))
+            }
+            ctx.stroke(thirds, with: .color(.white.opacity(0.28)), lineWidth: 1)
+            var centre = Path()
+            centre.move(to: CGPoint(x: w / 2, y: 0)); centre.addLine(to: CGPoint(x: w / 2, y: h))
+            centre.move(to: CGPoint(x: 0, y: h / 2)); centre.addLine(to: CGPoint(x: w, y: h / 2))
+            ctx.stroke(centre, with: .color(.white.opacity(0.45)), lineWidth: 1)
+            // The inscribed circle, so a disc mask can be judged before it is on.
+            ctx.stroke(Path(ellipseIn: CGRect(x: 0, y: 0, width: w, height: h)),
+                       with: .color(.white.opacity(0.28)), lineWidth: 1)
+        }
+        .frame(width: side, height: side)
+        .allowsHitTesting(false)
     }
 
     @ViewBuilder

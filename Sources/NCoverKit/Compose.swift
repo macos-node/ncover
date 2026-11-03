@@ -186,6 +186,25 @@ public func invertRGB(_ src: Raster) -> Raster {
     return out
 }
 
+/// Composite a filled, centred square onto a copy of `base`.
+///
+/// Side = `frac` of the canvas side, clamped. **Opaque** — a label mark is
+/// solid, not a tint — so it also stamps over transparent ground, turning it
+/// into the square's colour there. That is the behaviour that makes it useful
+/// on a blank canvas, which is where it is usually wanted.
+public func stampSquare(_ base: Raster, frac: Double, colour c: RGB) -> Raster {
+    var out = base
+    let side = Int((frac.clamped(0, 1) * Double(min(base.width, base.height))).rounded())
+    guard side > 0 else { return out }          // an empty square is a no-op, not an error
+    let x0 = (base.width - side) / 2, y0 = (base.height - side) / 2
+    for y in max(0, y0)..<min(base.height, y0 + side) {
+        for x in max(0, x0)..<min(base.width, x0 + side) {
+            out.set(x, y, RGBA(c.r, c.g, c.b, 255))
+        }
+    }
+    return out
+}
+
 /// Mask `src` to a shape inscribed in a square canvas, filling outside it.
 ///
 /// The shape arrives as a signed distance function (`Mask`), so this one

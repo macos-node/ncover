@@ -238,6 +238,22 @@ final class ColorStoreTests: XCTestCase {
         XCTAssertTrue(d.pinned.isEmpty, "a pin pointing at nothing would render as a blank strip")
     }
 
+    /// The disk format, without touching the user's real file — `saveColorData`
+    /// writes to Application Support, and a test has no business there.
+    func testTheWholeStoreRoundTripsThroughJSON() throws {
+        var d = ColorData()
+        d.format = .hsl
+        d.canvas = 800
+        d.remember(RGB(1, 2, 3))
+        d.add(Palette(name: "Brand", colors: [Swatch(RGB(9, 13, 18), name: "bg")]))
+        pinToFront(&d, "Brand")
+
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        let back = try JSONDecoder().decode(ColorData.self, from: try enc.encode(d))
+        XCTAssertEqual(back, d)
+    }
+
     func testTheStoreSurvivesAFileItHasNeverSeen() throws {
         // Every field optional: the file is shared with the GTK app and with
         // older versions of this one.

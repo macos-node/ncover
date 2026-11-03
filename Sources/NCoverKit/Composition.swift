@@ -188,6 +188,9 @@ public enum Operation: Equatable, Sendable {
     case mask(Mask, fill: OuterFill, fit: MaskFit)
     /// Invert RGB, leaving alpha alone.
     case invert
+    /// Stamp an opaque, centred square. `frac` is its side as a fraction of
+    /// the canvas.
+    case square(frac: Double, colour: RGB)
 
     /// Whether this operation can be written as vector rather than pixels.
     /// The honest answer per case, not a guess — it decides whether the app
@@ -207,6 +210,8 @@ public enum Operation: Equatable, Sendable {
             return true
         case .invert:
             return true                            // feColorMatrix
+        case .square:
+            return true                            // a <rect>
         }
     }
 
@@ -216,6 +221,8 @@ public enum Operation: Equatable, Sendable {
         case .mask(let m, _, let fit):
             return m.label + " mask" + (fit == .artwork ? " (artwork)" : "")
         case .invert:           return "Invert"
+        case .square(let frac, _):
+            return "Square (\(Int((frac * 100).rounded()))%)"
         }
     }
 }
@@ -279,6 +286,8 @@ public func renderRaster(_ doc: Composition) -> Raster {
             canvasRaster = applyMask(canvasRaster, m, fill: fill, region: region) ?? canvasRaster
         case .invert:
             canvasRaster = invertRGB(canvasRaster)
+        case .square(let frac, let colour):
+            canvasRaster = stampSquare(canvasRaster, frac: frac, colour: colour)
         }
     }
     return canvasRaster

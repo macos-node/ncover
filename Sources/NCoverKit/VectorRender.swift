@@ -149,6 +149,14 @@ public func renderVector(_ doc: Composition) -> String? {
             let fm = "<feColorMatrix type=" + "\"matrix\"" + " values=" + "\"\(matrix)\"" + "/>"
             defs.append(#"<filter id="\#(fID)" color-interpolation-filters="sRGB">"# + fm + "</filter>")
             body = #"<g filter="url(#\#(fID))">"# + body + "</g>"
+
+        case .square(let frac, let colour):
+            // Appended, not wrapped: the square is drawn ON what came before,
+            // which is what the raster backend's stamp does. Opaque, with the
+            // same rounding as the raster side so the two agree on the edge.
+            let side = (max(0, min(1, frac)) * c).rounded()
+            let o = ((c - side) / 2).rounded()
+            body += #"<rect x="\#(f(o))" y="\#(f(o))" width="\#(f(side))" height="\#(f(side))" fill="\#(hex(colour))"/>"#
         }
     }
 
