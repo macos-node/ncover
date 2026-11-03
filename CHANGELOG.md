@@ -8,6 +8,8 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-03
+
 ### Added
 - **Batch says what it will touch, before you run it.** Choosing a scope now
   surveys it: how many images, in how many releases or folders, listed by
@@ -146,7 +148,8 @@ First release.
 - Overwrite the original in place, guarded to PNG sources only.
 - Undo and redo across the whole edit history.
 
-[Unreleased]: https://github.com/macos-node/ncover/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/macos-node/ncover/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/macos-node/ncover/releases/tag/v0.5.0
 [0.4.0]: https://github.com/macos-node/ncover/releases/tag/v0.4.0
 [0.3.1]: https://github.com/macos-node/ncover/releases/tag/v0.3.1
 [0.3.0]: https://github.com/macos-node/ncover/releases/tag/v0.3.0
