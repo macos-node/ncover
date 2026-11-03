@@ -91,6 +91,7 @@ struct BatchView: View {
                         .font(.caption).foregroundStyle(.tertiary)
                 }
 
+                scopeSurvey
                 if !run.thumbs.isEmpty { previewSheet }
                 if !run.rows.isEmpty { results }
             }
@@ -107,9 +108,74 @@ struct BatchView: View {
         } message: { Text(run.error ?? "") }
     }
 
+    /// What the run would touch, before anything is rendered. Walking
+    /// directories decodes nothing, so this can keep up with typing — and a
+    /// filter whose effect you cannot see is a guess.
+    @ViewBuilder
+    private var scopeSurvey: some View {
+        Section("What it will touch") {
+            if let s = run.survey {
+                HStack(spacing: 8) {
+                    Text(headline(s)).font(.callout)
+                    if run.surveying { ProgressView().controlSize(.small) }
+                    Spacer()
+                }
+                if s.total == 0 {
+                    Text(run.needle.isEmpty
+                         ? "No images found under that scope."
+                         : "Nothing matches “\(run.needle)”. Clear the filter to take every image.")
+                        .font(.caption).foregroundStyle(.orange)
+                } else {
+                    ForEach(s.groups) { g in
+                        DisclosureGroup {
+                            ForEach(g.files, id: \.self) { f in
+                                Text(f)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1).truncationMode(.head)
+                            }
+                        } label: {
+                            HStack {
+                                Text(g.name).lineLimit(1)
+                                Spacer()
+                                Text("\(g.files.count)")
+                                    .monospacedDigit().foregroundStyle(.tertiary)
+                            }
+                            .font(.callout)
+                        }
+                    }
+                }
+            } else if run.surveying {
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Looking…") }
+            } else {
+                Text("Choose a scope.").font(.callout).foregroundStyle(.tertiary)
+            }
+        }
+        // Re-survey when the scope or the filter changes. The id covers all
+        // three inputs, so no change can leave a stale count on screen.
+        .task(id: "\(run.scope.rawValue)|\(run.sourceFolder?.path ?? "")|\(run.needle)") {
+            // A beat, so a walk does not start on every keystroke.
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            await run.refreshSurvey()
+        }
+    }
+
+    private func headline(_ s: BatchSurvey) -> String {
+        let what = run.scope == .published ? "release" : "folder"
+        var out = "\(s.total) image\(s.total == 1 ? "" : "s")"
+        out += " in \(s.groups.count) \(what)\(s.groups.count == 1 ? "" : "s")"
+        if s.emptyRoots > 0 {
+            out += " · \(s.emptyRoots) \(what)\(s.emptyRoots == 1 ? "" : "s") matched nothing"
+        }
+        return out
+    }
+
     @ViewBuilder
     private var previewSheet: some View {
-        Section("Preview — the first \(BatchRunner.previewCount)") {
+        Section(run.total > BatchRunner.previewCount
+                ? "Preview — the first \(BatchRunner.previewCount) of \(run.total)"
+                : "Preview") {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(96), spacing: 10), count: 5),
                       spacing: 12) {
                 ForEach(run.thumbs) { t in
@@ -159,6 +225,14 @@ struct BatchView: View {
         }
     }
 
+    /// The button says how many files it is about to touch. "Run" over an
+    /// unknown number of someone's originals is a worse button than "Run 20".
+    private var runLabel: String {
+        let verb = run.dryRun ? "Dry run" : "Run"
+        guard let n = run.actionCount, n > 0 else { return verb }
+        return "\(verb) \(n)"
+    }
+
     @ViewBuilder
     private var footer: some View {
         HStack(spacing: 12) {
@@ -177,7 +251,7 @@ struct BatchView: View {
                 Button("Close") { dismiss() }
                 Button("Preview") { Task { await run.preview() } }
                     .disabled(run.blocker != nil)
-                Button(run.dryRun ? "Dry run" : "Run") { Task { await run.run() } }
+                Button(runLabel) { Task { await run.run() } }
                     .keyboardShortcut(.defaultAction)
                     .disabled(run.blocker != nil)
             }

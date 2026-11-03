@@ -126,7 +126,10 @@ Undo is a stack of compositions, so no operation needs its own inverse.
 - Save as PNG, or **as SVG** when the source is vector and every step has a
   vector form. Or overwrite the original — but only ever a PNG.
 - **Batch** one recipe over a folder, or over every release **ndisc** has
-  published, with a **preview contact sheet** and a **dry run**. It never
+  published. Choosing a scope surveys it first — how many images, in which
+  releases, named from the manifest, and how many releases matched nothing —
+  updating as you type the filter. Then a **preview contact sheet** and a
+  **dry run**. It never
   writes over your originals, and refuses an output folder that would make the
   next run eat its own output.
 - Undo and redo the whole edit history (⌘Z / ⇧⌘Z).
@@ -139,7 +142,7 @@ Output is always PNG. Not a preference: the disc mask needs an alpha channel.
 it is about gestures, dialogs and what the screen actually shows — and because
 the bugs found here so far have all been in that gap.
 
-### Covered automatically (120 tests — 93 swift-testing, 27 XCTest)
+### Covered automatically (123 tests — 96 swift-testing, 27 XCTest)
 
 | Area | What is asserted |
 |---|---|
@@ -152,7 +155,7 @@ the bugs found here so far have all been in that gap.
 | Store | History and pins are recency-deduped and capped; a rename follows its pin and refuses a collision; a removed palette is unpinned; every field survives a file it has never seen |
 | Quantising | Dominant colours come back most-used first; transparent pixels are not colours; the representative is a colour the image contains |
 | SVG | Declared colours, not pixels; `none` and `url(#…)` are not colours; fonts, text and structure; a `style=""` is read; a malformed file errors |
-| Batch | The destination mirrors the source tree; discovery recurses, filters and skips dot-dirs; a file found twice is written once; a manifest with no root falls back to what its releases share, or is refused; a whole run writes the right file and leaves the original byte-identical |
+| Batch | The survey names releases from the manifest, counts the ones that matched nothing, and agrees exactly with what a run would write; the destination mirrors the source tree; discovery recurses, filters and skips dot-dirs; a file found twice is written once; a manifest with no root falls back to what its releases share, or is refused; a whole run writes the right file and leaves the original byte-identical |
 | Guards | Output may not equal, nest inside, or contain the source; Overwrite refuses anything but a PNG |
 | File I/O | A PNG round-trips with its alpha corners intact |
 
@@ -347,6 +350,10 @@ what you did not.
 
 - [ ] The output folder being the source, inside it, or above it is each
       refused with its own reason, before anything is written.
+- [ ] The survey appears on choosing a scope, and its count matches what a
+      run then writes.
+- [ ] Typing in the filter changes the count, and an impossible filter says
+      so rather than showing nothing.
 - [ ] Preview renders the first twelve, including the failures.
 - [ ] A dry run writes nothing and still reports a file that would fail.
 - [ ] A real run mirrors the source tree, suffixes `-disc` only with a mask,

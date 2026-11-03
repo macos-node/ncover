@@ -25,9 +25,15 @@ public struct BatchScope: Equatable, Sendable {
     public var strip: URL
     /// The source boundary the guard protects. The originals live under here.
     public var guardRoot: URL
+    /// What to call each root, by its path — "Artist — Title" for a release.
+    ///
+    /// The manifest knows this and it would be a waste to throw it away: a
+    /// list of folder paths is a much worse answer to "what will this touch"
+    /// than a list of records.
+    public var names: [String: String]
 
-    public init(roots: [URL], strip: URL, guardRoot: URL) {
-        self.roots = roots; self.strip = strip; self.guardRoot = guardRoot
+    public init(roots: [URL], strip: URL, guardRoot: URL, names: [String: String] = [:]) {
+        self.roots = roots; self.strip = strip; self.guardRoot = guardRoot; self.names = names
     }
 
     public static func folder(_ root: URL) -> BatchScope {
@@ -43,7 +49,15 @@ public struct BatchScope: Equatable, Sendable {
         let root = m.libraryRoot.map { URL(fileURLWithPath: $0) }
             ?? commonAncestor(of: dirs)
         guard let root else { throw BatchError.manifestNoRoot }
-        return BatchScope(roots: dirs, strip: root, guardRoot: root)
+        var names: [String: String] = [:]
+        for r in m.releases {
+            let parts = [r.artist, r.title].compactMap { $0 }.filter { !$0.isEmpty }
+            if !parts.isEmpty {
+                names[URL(fileURLWithPath: r.dir).standardizedFileURL.path]
+                    = parts.joined(separator: " — ")
+            }
+        }
+        return BatchScope(roots: dirs, strip: root, guardRoot: root, names: names)
     }
 }
 
@@ -171,6 +185,65 @@ public func relativePath(of hit: URL, under strip: URL) -> String {
 }
 
 // MARK: - one file
+
+// MARK: - what a run would touch
+
+/// What a scope and a filter actually select, before anything is rendered.
+///
+/// Walking directories is cheap — no image is decoded — so this can be shown
+/// and kept current while someone types a filter. That is the point of it: a
+/// filter you cannot see the effect of is a guess, and "run it and find out"
+/// is a poor way to learn that `cover` matches twenty files and nothing
+/// matches `front`.
+public struct BatchSurvey: Equatable, Sendable {
+    public struct Group: Equatable, Sendable, Identifiable {
+        /// The walk root this came from.
+        public var root: String
+        /// What to call it: the release's artist and title where the manifest
+        /// said, else the folder's own path within the scope.
+        public var name: String
+        /// Matching files, as paths relative to the scope's prefix.
+        public var files: [String]
+
+        public var id: String { root }
+    }
+
+    public var groups: [Group]
+    /// Every matching file, across all groups.
+    public var total: Int
+    /// Roots that matched nothing. Counted rather than listed — "9 releases
+    /// have no cover" is the useful form of that, and naming all nine is not.
+    public var emptyRoots: Int
+
+    public init(groups: [Group], total: Int, emptyRoots: Int) {
+        self.groups = groups; self.total = total; self.emptyRoots = emptyRoots
+    }
+}
+
+/// Survey a scope without rendering anything.
+public func surveyBatch(_ scope: BatchScope, needle: String) -> BatchSurvey {
+    var groups: [BatchSurvey.Group] = []
+    var seen = Set<String>()
+    var empty = 0
+    var total = 0
+
+    for root in scope.roots {
+        var hits: [URL] = []
+        findImages(root: root, needle: needle, into: &hits)
+        // A file reachable from two roots (nested releases) belongs to the
+        // first that found it, so the totals here match what a run writes.
+        let fresh = hits.filter { seen.insert($0.standardizedFileURL.path).inserted }
+        guard !fresh.isEmpty else { empty += 1; continue }
+        let key = root.standardizedFileURL.path
+        groups.append(BatchSurvey.Group(
+            root: key,
+            name: scope.names[key] ?? relativePath(of: root, under: scope.strip),
+            files: fresh.map { relativePath(of: $0, under: scope.strip) }.sorted()))
+        total += fresh.count
+    }
+    groups.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    return BatchSurvey(groups: groups, total: total, emptyRoots: empty)
+}
 
 /// Where one source lands.
 ///

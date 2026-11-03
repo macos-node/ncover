@@ -365,6 +365,18 @@ backend changes.
   `URL(fileURLWithPath:)` resolves a *relative* path against the process's
   current directory, so building one from a relpath silently drags the cwd
   into every output path. A test caught this; keep it.
+- **The survey and the run must agree.** `surveyBatch` and `findImages` do
+  the same de-duplication in the same order, because the number on the button
+  is a promise about how many of someone's files are about to be touched. A
+  test ties the two counts together; keep it.
+- **Surveying decodes nothing**, which is what makes it cheap enough to keep
+  current while the filter is being typed — and a filter whose effect you
+  cannot see is a guess. It still runs off the main actor, because a library
+  of a few thousand releases is a few thousand `contentsOfDirectory` calls.
+- **The manifest's artist and title are carried into the scope** (`names`).
+  Throwing them away and showing folder paths would be a much worse answer to
+  "what will this touch" — and the folder often does not match the record, as
+  a compilation filed under Various Artists shows.
 - **A preview must show its failures.** A contact sheet that quietly omits the
   files that would fail is a preview that lies about what the run will do.
 - **Each result row carries its reason.** "31 failed" is unactionable and

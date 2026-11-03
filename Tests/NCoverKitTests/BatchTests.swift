@@ -159,6 +159,66 @@ struct BatchTests {
         #expect(try Data(contentsOf: original) == before, "the original is untouched")
     }
 
+    @Test func theSurveySaysWhatWouldBeTouchedWithoutRenderingAnything() throws {
+        let root = tmpdir("survey")
+        for (artist, title, files) in [
+            ("Mr.Oizo", "Lambs Anger", ["cover.jpg", "back.jpg"]),
+            ("Lifted", "Trellis", ["cover.jpg"]),
+            ("Nobody", "Nothing", ["notes.txt"]),
+        ] {
+            let d = root.appendingPathComponent("\(artist)/\(title)")
+            try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+            for f in files { try Data("x".utf8).write(to: d.appendingPathComponent(f)) }
+        }
+        let json = """
+            {"libraryRoot":"\(root.path)","releases":[
+              {"dir":"\(root.path)/Mr.Oizo/Lambs Anger","artist":"Mr.Oizo","title":"Lambs Anger"},
+              {"dir":"\(root.path)/Lifted/Trellis","artist":"Lifted","title":"Trellis"},
+              {"dir":"\(root.path)/Nobody/Nothing","artist":"Nobody","title":"Nothing"}]}
+            """
+        let scope = try BatchScope.published(try JSONDecoder().decode(
+            Manifest.self, from: Data(json.utf8)))
+
+        let all = surveyBatch(scope, needle: "")
+        #expect(all.total == 3)
+        #expect(all.groups.count == 2, "the release with only a .txt is not a group")
+        #expect(all.emptyRoots == 1, "but it is counted, because 'nothing matched' is news")
+        // Named from the manifest, and in name order — a list of paths is a
+        // much worse answer to "what will this touch" than a list of records.
+        #expect(all.groups.map(\.name) == ["Lifted — Trellis", "Mr.Oizo — Lambs Anger"])
+        #expect(all.groups[0].files == ["Lifted/Trellis/cover.jpg"])
+
+        let covers = surveyBatch(scope, needle: "cover")
+        #expect(covers.total == 2)
+        #expect(covers.groups.allSatisfy { $0.files.allSatisfy { $0.hasSuffix("cover.jpg") } })
+
+        // The survey and the run must agree, or the count on the button is a lie.
+        #expect(covers.total == findImages(in: scope, needle: "cover").count)
+        #expect(all.total == findImages(in: scope, needle: "").count)
+    }
+
+    @Test func aFolderScopeIsNamedByItsOwnShapeSinceNoManifestNamesIt() throws {
+        let root = tmpdir("survey-folder")
+        let d = root.appendingPathComponent("Artist/Release")
+        try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: d.appendingPathComponent("cover.png"))
+        let s = surveyBatch(.folder(root), needle: "")
+        #expect(s.total == 1)
+        #expect(s.groups.count == 1)
+        #expect(s.groups[0].files == ["Artist/Release/cover.png"])
+    }
+
+    @Test func aFileUnderTwoRootsIsCountedOnce() throws {
+        let root = tmpdir("survey-dupes")
+        let inner = root.appendingPathComponent("a")
+        try FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: inner.appendingPathComponent("cover.png"))
+        let scope = BatchScope(roots: [root, inner], strip: root, guardRoot: root)
+        let s = surveyBatch(scope, needle: "")
+        #expect(s.total == 1, "the count must match what a run writes")
+        #expect(s.total == findImages(in: scope, needle: "").count)
+    }
+
     @Test func anEmptyImageIsAnErrorRatherThanABlankFile() {
         #expect(throws: BatchError.emptyImage) {
             _ = try batchRender(Raster(empty: 0, height: 0),

@@ -65,6 +65,11 @@ final class BatchRunner: ObservableObject {
     @Published private(set) var stopped = false
     @Published var error: String?
 
+    /// What the current scope and filter select, kept current while you type.
+    /// `nil` until the first survey lands; the walk is cheap but not free.
+    @Published private(set) var survey: BatchSurvey?
+    @Published private(set) var surveying = false
+
     private var cancelled = false
 
     /// How many result rows the list shows. Beyond this the run is still
@@ -125,6 +130,26 @@ final class BatchRunner: ObservableObject {
             guard let p = manifestPath else { throw BatchError.manifestMissing }
             return try .published(try loadManifest(at: p))
         }
+    }
+
+    // MARK: - surveying
+
+    /// Recompute what the run would touch.
+    ///
+    /// Off the main actor: it is only a directory walk and decodes nothing,
+    /// but a library of a few thousand releases is still a few thousand
+    /// `contentsOfDirectory` calls and the filter field has to stay typeable.
+    func refreshSurvey() async {
+        guard let scope = try? currentScope() else { survey = nil; return }
+        let needle = self.needle
+        surveying = true
+        defer { surveying = false }
+        let result = await Task.detached(priority: .userInitiated) {
+            surveyBatch(scope, needle: needle)
+        }.value
+        // The filter may have moved on while we walked; the last word wins.
+        guard needle == self.needle else { return }
+        survey = result
     }
 
     // MARK: - choosing folders
@@ -251,6 +276,9 @@ final class BatchRunner: ObservableObject {
         }
         return try batchRender(src, recipe: r)
     }
+
+    /// What the buttons should say they are about to do.
+    var actionCount: Int? { survey?.total }
 
     var summary: String {
         if running { return "\(done) of \(total)…" }

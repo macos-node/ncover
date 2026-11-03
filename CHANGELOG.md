@@ -8,6 +8,16 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Added
+- **Batch says what it will touch, before you run it.** Choosing a scope now
+  surveys it: how many images, in how many releases or folders, listed by
+  release with their file names, and how many releases matched nothing. It
+  keeps up as you type the filter, because a filter whose effect you cannot
+  see is a guess — and it is a directory walk, so nothing is decoded.
+- Releases are named from ndisc's manifest ("Artist — Title") rather than by
+  folder path, which often disagrees with the record.
+- The Run button says how many files it is about to touch.
+
 ## [0.4.0] — 2026-11-03
 
 ### Added
