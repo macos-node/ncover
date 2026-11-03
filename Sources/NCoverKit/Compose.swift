@@ -162,6 +162,15 @@ func composeAreaAveraged(_ src: Raster, _ p: Placement, canvas: Int) -> Raster {
     return dst
 }
 
+/// A square of one opaque colour.
+public func solid(_ c: RGB, size: Int) -> Raster {
+    var r = Raster(empty: size, height: size)
+    for i in stride(from: 0, to: r.px.count, by: 4) {
+        r.px[i] = c.r; r.px[i + 1] = c.g; r.px[i + 2] = c.b; r.px[i + 3] = 255
+    }
+    return r
+}
+
 /// A blank canvas as a **source**, raster and vector together.
 ///
 /// The vector half is what makes type worth having. Without it a composition

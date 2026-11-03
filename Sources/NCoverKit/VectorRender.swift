@@ -91,7 +91,12 @@ private func hex(_ c: RGB) -> String {
 /// Render the document as SVG, or `nil` when it cannot be — ask
 /// `Composition.vectorRefusal` for the reason to show someone.
 public func renderVector(_ doc: Composition) -> String? {
-    guard doc.vectorRefusal == nil, let vec = doc.source.vector else { return nil }
+    guard doc.vectorRefusal == nil else { return nil }
+    // A template source is never drawn, so there is nothing to nest and the
+    // document needs no vector source at all — which is the whole point of
+    // tracing a scan and exporting the tracing.
+    let vec = doc.source.vector
+    if vec == nil && !doc.sourceIsTemplate { return nil }
 
     let c = Double(doc.canvas)
     var defs: [String] = []
@@ -102,6 +107,7 @@ public func renderVector(_ doc: Composition) -> String? {
     for (i, op) in doc.ops.enumerated() {
         switch op {
         case .place(let p):
+            guard let vec else { break }
             let w = p.w(doc.source.raster.width)
             let h = p.h(doc.source.raster.height)
             body += vec.nested(x: p.dx, y: p.dy, width: w, height: h)
@@ -164,6 +170,16 @@ public func renderVector(_ doc: Composition) -> String? {
             // backend draws, so the two cannot disagree about where a letter
             // sits — only about how its edge is antialiased.
             if let paths = textAsSVGPaths(spec, canvas: doc.canvas) { body += paths }
+
+        case .background(let colour):
+            // Prepended, not appended: a background goes UNDER what has been
+            // drawn, which in SVG means earlier in document order. Appending
+            // it would paint over the artwork, which is the one thing a
+            // background must not do.
+            body = #"<rect width="\#(f(c))" height="\#(f(c))" fill="\#(hex(colour))"/>"# + body
+
+        case .template:
+            break                                  // a guide, never a mark
         }
     }
 

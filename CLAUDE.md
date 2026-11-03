@@ -325,6 +325,32 @@ backend changes.
   A white square *is* expressible as a white square; saying otherwise was
   never honest, it was only never asked.
 
+## Template and background
+
+- **`.template` is a placement that draws nothing**, and the ghost on the
+  canvas is drawn by `CanvasView`, not by a renderer. That is deliberate and
+  it is the same category as the grid and the snap guides: the rule "the
+  preview is what a PNG export writes" is about the **file**, and a guide that
+  reached `renderRaster` would be a data bug exactly like the backdrop would.
+- **It carries a placement so the gestures keep working.** `Composition.placement`
+  and `setPlacement` handle either case, and `setSourceIsTemplate` converts
+  one into the other in place — so toggling it does not lose where you put the
+  source, and setting a placement does not silently un-template it.
+- **A raster template does not block SVG output**, and this is the point of
+  the whole thing. `vectorRefusal` asks whether the source is *drawn* before
+  it cares what format it is: a scan used as a guide contributes nothing to
+  the output, so it has no say in whether the output can be vector. A raster
+  source that is actually placed still refuses, and a test pins both halves.
+- **`.background` composites UNDER what is already drawn**, whatever its
+  position in the list, which is why it can sit late enough for a mask to clip
+  it without painting over the artwork. In SVG that means the `<rect>` is
+  **prepended** to the body — document order is paint order, and appending it
+  would cover everything.
+- **The background is written to the file; the backdrop is not.** Two things
+  that look alike in the inspector and are opposites: one is part of the
+  picture, the other is a viewing condition. Keep the labels and tooltips
+  saying so.
+
 ## Traps in batch
 
 - **The runner is `@MainActor` throughout, and must stay that way.** An SVG

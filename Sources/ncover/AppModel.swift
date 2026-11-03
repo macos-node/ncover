@@ -51,6 +51,12 @@ final class AppModel: ObservableObject {
     @Published var textY: Double = 0.5         { didSet { rebuild() } }
     @Published var textTracking: Double = 0    { didSet { rebuild() } }
     @Published var textLineSpacing: Double = 1.2 { didSet { rebuild() } }
+    /// A flat colour behind everything. Unlike the backdrop, this one is
+    /// written to the file — it is part of the picture, not a viewing aid.
+    @Published var backgroundOn = false        { didSet { rebuild() } }
+    @Published var backgroundColour: Color = .white { didSet { rebuild() } }
+    /// Whether the source is a tracing guide rather than part of the picture.
+    @Published var sourceIsTemplate = false    { didSet { rebuild() } }
     @Published var maskShape: MaskKind = .disc { didSet { rebuild() } }
     /// Corner radius / chamfer inset, as a fraction of half the canvas. One
     /// control for both because they mean the same thing: how much corner goes.
@@ -276,6 +282,9 @@ final class AppModel: ObservableObject {
         for case .square(let frac, let colour) in d.ops { foundSquare = (frac, colour) }
         var foundText: TextSpec?
         for case .text(let spec) in d.ops { foundText = spec }
+        var foundBackground: RGB?
+        for case .background(let c) in d.ops { foundBackground = c }
+        let foundTemplate = d.sourceIsTemplate
         let foundInvert = d.ops.contains { if case .invert = $0 { return true }; return false }
         withControlsSilenced {
             invertOn = foundInvert
@@ -283,6 +292,9 @@ final class AppModel: ObservableObject {
             if let (frac, colour) = foundSquare {
                 squareFrac = frac; squareColour = Color(colour)
             }
+            backgroundOn = foundBackground != nil
+            if let c = foundBackground { backgroundColour = Color(c) }
+            sourceIsTemplate = foundTemplate
             textOn = foundText != nil
             if let t = foundText {
                 textString = t.string; textFont = t.font; textSize = t.size
@@ -325,9 +337,13 @@ final class AppModel: ObservableObject {
     private func rebuild() {
         guard !silenced, doc != nil else { return }
         let built = buildOps()
+        let asTemplate = sourceIsTemplate
         mutate { doc in
-            let place = doc.ops.first { if case .place = $0 { return true }; return false }
-            doc.ops = (place.map { [$0] } ?? []) + built
+            let placement = doc.placement
+            doc.ops = built
+            if let p = placement {
+                doc.ops.insert(asTemplate ? .template(p) : .place(p), at: 0)
+            }
         }
     }
 
@@ -338,6 +354,10 @@ final class AppModel: ObservableObject {
         // Type goes over the square — a label mark is the ground the wording
         // sits on — and under the mask, which clips the finished picture.
         if textOn, !textString.isEmpty { out.append(.text(textSpec)) }
+        // Late in the list and still underneath, because `.background`
+        // composites *under* what is drawn. Late so the mask clips it too —
+        // a background outside the disc would just be the corner fill.
+        if backgroundOn { out.append(.background(backgroundColour.rgb)) }
         if discOn { out.append(.mask(mask, fill: outerFill, fit: maskFit)) }
         return out
     }
@@ -400,6 +420,7 @@ final class AppModel: ObservableObject {
         // over silently would apply a 60% square to a file you just opened.
         withControlsSilenced {
             invertOn = false; squareOn = false; discOn = false; textOn = false
+            backgroundOn = false; sourceIsTemplate = false
         }
         resetFraming()
     }
@@ -471,11 +492,21 @@ final class AppModel: ObservableObject {
 
     // MARK: - render
 
+    /// The template, placed, for the canvas to draw as a ghost. `nil` unless
+    /// the source is a guide — a preview-only image, like the grid, and it
+    /// never reaches a renderer.
+    @Published private(set) var templateGhost: NSImage?
+
     func rerender() {
-        guard let d = doc else { preview = nil; lastRender = nil; return }
+        guard let d = doc else {
+            preview = nil; lastRender = nil; templateGhost = nil; return
+        }
         let r = renderRaster(d)
         lastRender = r
         preview = r.nsImage()
+        templateGhost = d.sourceIsTemplate && d.placement != nil
+            ? compose(d.source.raster, d.placement!, canvas: d.canvas).nsImage()
+            : nil
     }
 
     // MARK: - picking off the canvas

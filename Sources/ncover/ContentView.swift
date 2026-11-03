@@ -162,6 +162,15 @@ private struct Inspector: View {
                           ? "An SVG has no native resolution. It is re-rendered at the size it is drawn at, so it is never resampled."
                           : "The source image's own dimensions.")
                 }
+                if model.doc != nil {
+                    Toggle("Use as template", isOn: $model.sourceIsTemplate)
+                        .tip("""
+                            Show the source as a faint guide to trace over, and \
+                            leave it out of the file. Drag and zoom still move it. \
+                            With a bitmap traced this way the result can even be \
+                            saved as SVG — nothing of the bitmap is in it.
+                            """)
+                }
                 if model.folderCount > 1 {
                     LabeledContent("In folder") {
                         HStack(spacing: 6) {
@@ -251,6 +260,13 @@ private struct Inspector: View {
                     .tip("The square's side, as a fraction of the canvas.")
                     PaletteWell(label: "Square colour", colour: $model.squareColour,
                                 help: "The stamped square's colour. The swatch button beside the well holds your picked colours and pinned palettes.")
+                }
+
+                Toggle("Background", isOn: $model.backgroundOn)
+                    .tip("A flat colour behind everything — and unlike the backdrop, this one IS written to the file. A mask still clips it, so a disc on a background is a coloured disc.")
+                if model.backgroundOn {
+                    PaletteWell(label: "Background colour", colour: $model.backgroundColour,
+                                help: "From your own palettes.")
                 }
 
                 Button("Blank canvas") { model.blankCanvas() }

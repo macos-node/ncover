@@ -193,6 +193,20 @@ public enum Operation: Equatable, Sendable {
     case square(frac: Double, colour: RGB)
     /// Set type on the canvas.
     case text(TextSpec)
+    /// A flat colour **behind** everything drawn so far.
+    ///
+    /// Under, not over, whatever its position in the list — so it can sit
+    /// late enough to be clipped by a mask without painting over the artwork
+    /// it is a background to.
+    case background(RGB)
+    /// The source, placed, and **not drawn**.
+    ///
+    /// A tracing guide: something to set type over and then not export. It
+    /// carries a placement so the drag and zoom gestures have something to
+    /// edit, and renders nothing in either backend. The canvas shows it as a
+    /// ghost, which is the view's business — the same category as the grid
+    /// and the snap guides, and for the same reason.
+    case template(Placement)
 
     /// Whether this operation can be written as vector rather than pixels.
     /// The honest answer per case, not a guess — it decides whether the app
@@ -218,6 +232,11 @@ public enum Operation: Equatable, Sendable {
             // Glyph outlines as <path>, not <text> — see textAsSVGPaths for
             // why a font the reader may not have is not an export.
             return true
+        case .background:
+            return true                            // a <rect>, first in the body
+        case .template:
+            // It draws nothing, so there is nothing it could fail to express.
+            return true
         }
     }
 
@@ -230,6 +249,8 @@ public enum Operation: Equatable, Sendable {
         case .square(let frac, _):
             return "Square (\(Int((frac * 100).rounded()))%)"
         case .text(let spec):   return spec.label
+        case .background:       return "Background"
+        case .template:         return "Template (not exported)"
         }
     }
 }
@@ -250,22 +271,47 @@ public struct Composition: Equatable, Sendable {
     /// The placement, if one has been set — the common case of reaching into
     /// the list for the thing the canvas gestures edit.
     public var placement: Placement? {
-        for case .place(let p) in ops { return p }
+        for op in ops {
+            if case .place(let p) = op { return p }
+            if case .template(let p) = op { return p }
+        }
         return nil
     }
 
+    /// True when the source is a guide rather than part of the picture.
+    public var sourceIsTemplate: Bool {
+        ops.contains { if case .template = $0 { return true }; return false }
+    }
+
+    /// Replace the placement, keeping whichever kind it is. The gestures edit
+    /// "where the source sits" without having to know or care whether it is
+    /// being drawn.
     public mutating func setPlacement(_ p: Placement) {
         if let i = ops.firstIndex(where: { if case .place = $0 { return true }; return false }) {
             ops[i] = .place(p)
+        } else if let i = ops.firstIndex(where: {
+            if case .template = $0 { return true }; return false
+        }) {
+            ops[i] = .template(p)
         } else {
             ops.insert(.place(p), at: 0)
+        }
+    }
+
+    /// Switch the source between being drawn and being a guide.
+    public mutating func setSourceIsTemplate(_ on: Bool) {
+        for (i, op) in ops.enumerated() {
+            if case .place(let p) = op, on { ops[i] = .template(p); return }
+            if case .template(let p) = op, !on { ops[i] = .place(p); return }
         }
     }
 
     /// Why vector export is unavailable, or nil when it is available. Phrased
     /// for showing to someone rather than for logging.
     public var vectorRefusal: String? {
-        guard source.isVector else { return "the source is not an SVG" }
+        // A template source is never drawn, so whether it happens to be a
+        // bitmap says nothing about whether this composition is expressible.
+        if !source.isVector && !sourceIsTemplate { return "the source is not an SVG" }
         for (i, op) in ops.enumerated() where !op.hasVectorForm {
             return "step \(i + 1), \(op.label), has no vector form"
         }
@@ -297,6 +343,10 @@ public func renderRaster(_ doc: Composition) -> Raster {
             canvasRaster = stampSquare(canvasRaster, frac: frac, colour: colour)
         case .text(let spec):
             canvasRaster = drawText(canvasRaster, spec, canvas: doc.canvas)
+        case .background(let c):
+            canvasRaster = over(canvasRaster, solid(c, size: doc.canvas))
+        case .template:
+            break                                  // a guide, never a mark
         }
     }
     return canvasRaster

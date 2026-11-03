@@ -26,6 +26,19 @@ struct CanvasView: View {
                             .resizable()
                             .interpolation(.none)       // show the pixels we actually wrote
                             .frame(width: side, height: side)
+                        // The tracing guide. Drawn here rather than by a
+                        // renderer, like the grid and the snap guides, which
+                        // is what keeps "the preview is what a PNG export
+                        // writes" true of the *file* — the ghost is on the
+                        // screen, never in the output.
+                        if let ghost = model.templateGhost {
+                            Image(nsImage: ghost)
+                                .resizable()
+                                .interpolation(.none)
+                                .frame(width: side, height: side)
+                                .opacity(0.3)
+                                .allowsHitTesting(false)
+                        }
                         if model.showGrid { grid(side: side) }
                         guides(side: side)
                     }

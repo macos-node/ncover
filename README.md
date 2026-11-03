@@ -113,6 +113,11 @@ Undo is a stack of compositions, so no operation needs its own inverse.
   rectangle *is* the disc, so the control runs continuously from square to
   circle. Corners can be left transparent, filled white, filled with a colour,
   or run as a radial gradient from the rim outward.
+- **Use the source as a template**: a faint guide to trace over that is left
+  out of the file. Set type over a scan, drop the scan, and what is left can
+  be saved as SVG — containing nothing of the bitmap.
+- A **background** colour behind everything, which *is* written to the file
+  (unlike the preview backdrop, which never is).
 - A **grid** (thirds, centre, the inscribed circle) and a **Source / Result
   rail**, so what every control changed is visible beside what it changed.
 - A **preview backdrop** — checker, grey, black, white, or a colour picked from
@@ -134,14 +139,14 @@ Output is always PNG. Not a preference: the disc mask needs an alpha channel.
 it is about gestures, dialogs and what the screen actually shows — and because
 the bugs found here so far have all been in that gap.
 
-### Covered automatically (111 tests — 84 swift-testing, 27 XCTest)
+### Covered automatically (120 tests — 93 swift-testing, 27 XCTest)
 
 | Area | What is asserted |
 |---|---|
 | Disc mask | Transparent / white / solid / gradient corners; gradient runs rim→corner; a non-square source is covered, not letterboxed |
 | Placement | Cover and Fit centring and scale; snapping to centre and edges; each axis independent; rescaling a canvas does not re-crop |
 | Drag | A slow drag escapes a snap zone; a small one is held by it; translation is divided by the view scale; a zero scale is refused |
-| Build steps | Invert leaves alpha alone; a stamped square is centred, opaque and clamped; the square has a vector form and is drawn over the artwork |
+| Build steps | Invert leaves alpha alone; a stamped square is centred, opaque and clamped; the square has a vector form and is drawn over the artwork; a background goes under what is drawn and is clipped by a later mask; a template draws nothing, keeps its placement across the switch, and lets a traced bitmap export as SVG while a drawn one still refuses |
 | Type | The block centres on its point; size scales with the canvas; tracking widens about the centre; a second line stacks and the *block* stays centred; the colour is exact where coverage is full; the vector form is paths and names no font; both backends agree on where a glyph sits; a blank canvas can be saved as SVG; a missing font is reported rather than substituted silently |
 | Colour | HEX / RGB / HSL forms; `.gpl` reads named, unnamed and space-named swatches and round-trips; `.clr` round-trips through NSColorList; CSS uses swatch names; the JSON is the GTK app's shape |
 | Store | History and pins are recency-deduped and capped; a rename follows its pin and refuses a collision; a removed palette is unpinned; every field survives a file it has never seen |
@@ -319,6 +324,11 @@ what you did not.
 - [ ] Blank canvas starts from white, and Overwrite is off (there is nothing
       to overwrite). **Save As offers SVG** — it is a vector source now.
 - [ ] Type appears, and the font panel changes the face.
+- [ ] Use as template fades the source on screen and removes it from a saved
+      PNG; drag and zoom still move it.
+- [ ] With a bitmap used as a template, **Save As offers SVG**, and the saved
+      file has no bitmap in it.
+- [ ] Background appears in the saved file; the backdrop still does not.
 - [ ] The nine-way position grid moves it; the two sliders reach between them.
 - [ ] Changing the canvas size scales the type with it rather than leaving it
       the same number of pixels.

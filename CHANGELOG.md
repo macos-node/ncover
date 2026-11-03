@@ -8,6 +8,17 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Added
+- **Use as template.** The source becomes a faint tracing guide on the canvas
+  and is left out of the file. Drag and zoom still move it, and because it
+  contributes nothing to the output, **a traced bitmap can be saved as SVG** —
+  the result contains nothing of the bitmap. A raster source that is actually
+  drawn still refuses vector output, as before.
+- **Background**: a flat colour behind everything, and unlike the preview
+  backdrop this one *is* written to the file. It composites underneath
+  whatever is already drawn, and a mask still clips it, so a disc over a
+  background is a coloured disc.
+
 ## [0.3.1] — 2026-11-03
 
 ### Changed
