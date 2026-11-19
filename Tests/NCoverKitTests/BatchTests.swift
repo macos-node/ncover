@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
 
 @testable import NCoverKit
@@ -15,6 +17,31 @@ private func tmpdir(_ name: String) -> URL {
     return d
 }
 
+/// A real JPEG fixture. The app never writes one — output is always PNG — but
+/// a release holding `cover.jpg` *beside* `cover.png` is the arrangement that
+/// used to lose a file, and it cannot be staged with two PNGs.
+private func writeJPEGFixture(_ r: Raster, to url: URL) throws {
+    let data = CFDataCreate(nil, r.px, r.px.count)!
+    let img = CGImage(width: r.width, height: r.height,
+                      bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: r.width * 4,
+                      space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                      provider: CGDataProvider(data: data)!, decode: nil,
+                      shouldInterpolate: false, intent: .defaultIntent)!
+    let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil)!
+    CGImageDestinationAddImage(dest, img, nil)
+    #expect(CGImageDestinationFinalize(dest), "could not write the JPEG fixture")
+}
+
+/// An opaque raster of one colour.
+private func flat(_ w: Int, _ h: Int, _ c: RGBA) -> Raster {
+    var r = Raster(empty: w, height: h)
+    for i in stride(from: 0, to: r.px.count, by: 4) {
+        r.px[i] = c.r; r.px[i + 1] = c.g; r.px[i + 2] = c.b; r.px[i + 3] = 255
+    }
+    return r
+}
+
 @Suite("batch")
 struct BatchTests {
     @Test func theDestinationMirrorsTheSourceTree() {
@@ -29,6 +56,54 @@ struct BatchTests {
         // A file at the top of the scope keeps its name and gains no folder.
         #expect(batchDest(rel: "cover.png", outRoot: out, disc: false).path
                 == "/tmp/out/cover.png")
+    }
+
+    @Test func twoCoversInOneReleaseDoNotLandOnEachOther() throws {
+        // The bug this exists for: both of these plan `cover.png`, so the
+        // second run of the loop replaced the first's output and the results
+        // list called both of them written. A dry run could not show it,
+        // since each file renders perfectly on its own.
+        let out = URL(fileURLWithPath: "/tmp/out")
+        let plan = planDests(rels: ["Autechre/Amber/cover.jpg", "Autechre/Amber/cover.png"],
+                             outRoot: out, disc: false)
+        #expect(try plan[0].get().path == "/tmp/out/Autechre/Amber/cover-jpg.png")
+        #expect(try plan[1].get().path == "/tmp/out/Autechre/Amber/cover-png.png")
+    }
+
+    @Test func aNameNothingElseWantsIsLeftExactlyAsItWas() throws {
+        // The disambiguation is not a rename of everything: a library with no
+        // collisions has to come out byte-for-byte as it did before.
+        let out = URL(fileURLWithPath: "/tmp/out")
+        let plan = planDests(rels: ["Autechre/Amber/cover.jpg", "Autechre/Tri Repetae/cover.jpg"],
+                             outRoot: out, disc: false)
+        #expect(try plan[0].get().path == "/tmp/out/Autechre/Amber/cover.png")
+        #expect(try plan[1].get().path == "/tmp/out/Autechre/Tri Repetae/cover.png")
+    }
+
+    @Test func theDiscSuffixSurvivesDisambiguation() throws {
+        let out = URL(fileURLWithPath: "/tmp/out")
+        let plan = planDests(rels: ["a/cover.jpg", "a/cover.png"], outRoot: out, disc: true)
+        #expect(try plan[0].get().path == "/tmp/out/a/cover-jpg-disc.png")
+        #expect(try plan[1].get().path == "/tmp/out/a/cover-png-disc.png")
+    }
+
+    @Test func aClashThatSurvivesDisambiguationIsRefusedNotOverwritten() throws {
+        // `cover-jpg.jpg` is a real filename, and it takes the name the pair
+        // above would be given. Whoever gets there first keeps it; the other
+        // is refused by name rather than written over in silence.
+        let out = URL(fileURLWithPath: "/tmp/out")
+        let plan = planDests(rels: ["a/cover-jpg.png", "a/cover.jpg", "a/cover.png"],
+                             outRoot: out, disc: false)
+        #expect(try plan[0].get().path == "/tmp/out/a/cover-jpg.png")
+        #expect(plan[1] == .failure(.destinationTaken(first: "a/cover-jpg.png",
+                                                      dest: "/tmp/out/a/cover-jpg.png")))
+        #expect(try plan[2].get().path == "/tmp/out/a/cover-png.png")
+    }
+
+    @Test func aRefusalSaysWhichFileHoldsTheName() {
+        let e = BatchError.destinationTaken(first: "a/cover-jpg.png", dest: "/tmp/out/a/cover-jpg.png")
+        #expect(e.errorDescription
+                == "would overwrite the output of a/cover-jpg.png (/tmp/out/a/cover-jpg.png); not written")
     }
 
     @Test func discoveryRecursesFiltersByNameAndSkipsHidden() throws {
@@ -157,6 +232,45 @@ struct BatchTests {
         #expect(back.sample(100, 100) == RGBA(255, 0, 0, 255))
         #expect(back.sample(1, 1).a == 0, "alpha survives the file, corners and all")
         #expect(try Data(contentsOf: original) == before, "the original is untouched")
+    }
+
+    @Test func awholeRunKeepsBothCoversOfOneRelease() throws {
+        // The whole loop, as the runner does it, over the arrangement that
+        // used to lose a file: one release holding two covers. Before the
+        // plan, both wrote `cover.png` and the second replaced the first.
+        let base = tmpdir("pair")
+        let src = base.appendingPathComponent("library")
+        let out = base.appendingPathComponent("out")
+        let release = src.appendingPathComponent("Autechre/Amber")
+        try FileManager.default.createDirectory(at: release, withIntermediateDirectories: true)
+
+        try flat(40, 40, RGBA(255, 0, 0, 255)).writePNG(to: release.appendingPathComponent("cover.png"))
+        try writeJPEGFixture(flat(40, 40, RGBA(0, 160, 0, 255)),
+                             to: release.appendingPathComponent("cover.jpg"))
+
+        let scope = BatchScope.folder(src)
+        try guardBatch(source: scope.guardRoot, output: out)
+        let hits = findImages(in: scope, needle: "cover")
+        #expect(hits.count == 2)
+
+        let rels = hits.map { relativePath(of: $0, under: scope.strip) }
+        let plan = planDests(rels: rels, outRoot: out, disc: false)
+        let recipe = Recipe(canvas: 100, framing: .cover, disc: nil)
+        for (hit, planned) in zip(hits, plan) {
+            let dest = try planned.get()
+            try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try batchRender(try Raster.load(contentsOf: hit), recipe: recipe).writePNG(to: dest)
+        }
+
+        // Two files out for two files in, and each is still its own picture.
+        let fromJPEG = try Raster.load(
+            contentsOf: out.appendingPathComponent("Autechre/Amber/cover-jpg.png"))
+        let fromPNG = try Raster.load(
+            contentsOf: out.appendingPathComponent("Autechre/Amber/cover-png.png"))
+        let green = fromJPEG.sample(50, 50), red = fromPNG.sample(50, 50)
+        #expect(green.g > green.r, "the JPEG's output is the green one")
+        #expect(red.r > red.g, "the PNG's output is the red one")
     }
 
     @Test func theSurveySaysWhatWouldBeTouchedWithoutRenderingAnything() throws {

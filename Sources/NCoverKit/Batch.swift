@@ -67,6 +67,8 @@ public enum BatchError: LocalizedError, Equatable {
     case manifestNoRoot
     case notAnImage(String)
     case emptyImage
+    /// Two sources in one run plan the same output file.
+    case destinationTaken(first: String, dest: String)
 
     public var errorDescription: String? {
         switch self {
@@ -80,6 +82,8 @@ public enum BatchError: LocalizedError, Equatable {
             return "Could not read \(p) as an image"
         case .emptyImage:
             return "Empty image"
+        case .destinationTaken(let first, let dest):
+            return "would overwrite the output of \(first) (\(dest)); not written"
         }
     }
 }
@@ -260,6 +264,59 @@ public func batchDest(rel: String, outRoot: URL, disc: Bool) -> URL {
     var p = outRoot
     for part in parts where part != "." && part != ".." { p.appendPathComponent(part) }
     return p.appendingPathComponent(stem + (disc ? "-disc" : "") + ".png")
+}
+
+/// Where every source in a run lands, planned as a whole.
+///
+/// `batchDest` answers for one file, and one file at a time is not enough. It
+/// always writes `<stem>.png`, so a release holding both `cover.jpg` and
+/// `cover.png` sends the two of them to one `cover.png`: the second replaces
+/// the first, both are reported as written, and a dry run cannot show it
+/// because each file renders perfectly well on its own. The originals are
+/// never at risk — `guardBatch` keeps the run out of the source tree — but
+/// the output is quietly half of what the run claims.
+///
+/// So the names are planned for the whole run before anything is written.
+/// Sources that would share a name keep their extension in it
+/// (`cover-jpg.png`, `cover-png.png`); everything else keeps the plain name it
+/// always had, so a library with no collisions comes out exactly as before. A
+/// clash that survives that — the same `rel` twice, or a source literally
+/// named `cover-jpg.jpg` beside the pair — is **refused**, naming the file
+/// that holds the name, rather than overwriting it without a word.
+///
+/// The order matches `rels`, so a caller can zip it back onto its hits.
+public func planDests(rels: [String], outRoot: URL, disc: Bool) -> [Result<URL, BatchError>] {
+    let plain = rels.map { batchDest(rel: $0, outRoot: outRoot, disc: disc) }
+    var uses: [String: Int] = [:]
+    for p in plain { uses[p.path, default: 0] += 1 }
+
+    /// Which `rel` has claimed each output path.
+    var taken: [String: String] = [:]
+    var out: [Result<URL, BatchError>] = []
+    out.reserveCapacity(rels.count)
+
+    for (rel, p) in zip(rels, plain) {
+        var dest = p
+        if uses[p.path, default: 0] > 1 {
+            let file = rel.split(separator: "/").last.map(String.init) ?? rel
+            let stem = (file as NSString).deletingPathExtension
+            let ext = (file as NSString).pathExtension.lowercased()
+            // No extension to tell them apart with: leave the plain name and
+            // let the clash below refuse it. Inventing a number here would
+            // make the output depend on the walk order.
+            if !ext.isEmpty {
+                dest = p.deletingLastPathComponent()
+                    .appendingPathComponent(stem + "-" + ext + (disc ? "-disc" : "") + ".png")
+            }
+        }
+        if let first = taken[dest.path] {
+            out.append(.failure(.destinationTaken(first: first, dest: dest.path)))
+        } else {
+            taken[dest.path] = rel
+            out.append(.success(dest))
+        }
+    }
+    return out
 }
 
 /// Render one already-decoded source through the recipe.

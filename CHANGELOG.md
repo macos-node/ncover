@@ -18,6 +18,20 @@ Their version numbers are independent.
   sharing one identifier is how macOS starts launching the wrong build — and
   `make uninstall` now unregisters what it removes.
 
+### Fixed
+- **Two covers in one release no longer overwrite each other.** Every batch
+  output is a PNG named after its source, so a release holding both
+  `cover.jpg` and `cover.png` sent both to one `cover.png`: the second
+  replaced the first, and the results list called both of them written. A dry
+  run could not show it, because each file renders perfectly well on its own.
+  Output names are now planned for the whole run before anything is written —
+  sources that would share a name keep their extension in it
+  (`cover-jpg.png`, `cover-png.png`), and everything else keeps the plain name
+  it always had, so a library with no collisions comes out exactly as before.
+  A clash that survives that is refused, naming the file that holds the name.
+  The originals were never at risk: `guardBatch` keeps a run out of the source
+  tree. Ported from the GTK sibling's 0.3.0, where it was found.
+
 ## [0.5.1] — 2026-11-03
 
 ### Added

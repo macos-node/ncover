@@ -276,12 +276,16 @@ final class BatchRunner: ObservableObject {
             total = hits.count
             let r = recipe
             let dry = dryRun
+            // Planned for the whole run, not file by file: two covers in one
+            // release would otherwise plan the same output and the second
+            // would replace the first, both reported as written.
+            let rels = hits.map { relativePath(of: $0, under: s.strip) }
+            let plan = planDests(rels: rels, outRoot: out, disc: r.disc != nil)
 
-            for hit in hits {
+            for ((hit, rel), planned) in zip(zip(hits, rels), plan) {
                 if cancelled { break }
-                let rel = relativePath(of: hit, under: s.strip)
                 do {
-                    let dest = batchDest(rel: rel, outRoot: out, disc: r.disc != nil)
+                    let dest = try planned.get()
                     let rendered = try await renderOne(hit, recipe: r)
                     if !dry {
                         try FileManager.default.createDirectory(

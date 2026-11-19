@@ -28,7 +28,7 @@ tokens as CSS variables — will waste time here.
 make app     # build n.cover.app
 make dmg     # disk image, verified by mounting it
 make run     # build and launch
-make test    # the rule tests (95: 68 swift-testing, 27 XCTest)
+make test    # the rule tests (129: 102 swift-testing, 27 XCTest)
 ```
 
 ## The shape: a composition, not a pipeline
@@ -361,6 +361,17 @@ backend changes.
   source, output inside it, and the source inside the output. The third
   overwrites nothing, which is why it is easy to argue for — and it still has
   a run write over the folder its own inputs sit in.
+- **Output names are planned for the whole run, not file by file.** `batchDest`
+  answers for one file and cannot see a collision; `planDests` plans the lot.
+  Every output is a PNG named after its source, so a release holding both
+  `cover.jpg` and `cover.png` planned one `cover.png` and the second write
+  replaced the first — with both reported as written, and a dry run unable to
+  show it, because each file renders perfectly well on its own. Colliding
+  sources now keep their extension in the name (`cover-jpg.png`); everything
+  else keeps the plain name, so a library with no collisions is unchanged.
+  **The run must index the plan positionally** (`zip`, not a lookup by
+  relative path) — a lookup by name is exactly what cannot tell two sources
+  apart here.
 - **`batchDest` builds from string components on purpose.**
   `URL(fileURLWithPath:)` resolves a *relative* path against the process's
   current directory, so building one from a relpath silently drags the cwd
