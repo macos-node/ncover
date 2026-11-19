@@ -36,7 +36,7 @@ tokens as CSS variables — will waste time here.
 make app     # build n.cover.app
 make dmg     # disk image, verified by mounting it
 make run     # build and launch
-make test    # the rule tests (156: 129 swift-testing, 27 XCTest; one needs NCOVER_LIBRARY)
+make test    # the rule tests (167: 140 swift-testing, 27 XCTest; two are opt-in)
 ```
 
 ## The shape: a composition, not a pipeline
@@ -488,6 +488,35 @@ backend changes.
   alpha**, which is what gives a transparent logo transparent bars rather than
   grey ones. Each bar reads the row or column it sits against, so the two can
   differ — a sky at the top and a floor at the bottom.
+- **`BatchScope.images(under:needle:)` is the one place a root becomes
+  files.** `findImages(in:)` (the run, the samples) and `surveyBatch` (the
+  counts) both go through it, which is what keeps the button's number true.
+  Do not walk a root anywhere else.
+- **A list's "only this cover file" lives in the scope, not in a filter after
+  the walk.** `BatchScope.only` maps a root to the single file it contributes,
+  because ndisc's Export list names the exact cover its flags are about and a
+  release folder usually holds back and inlay art too. A post-walk filter
+  would let the survey and the run select different files, which is precisely
+  the thing the survey exists to rule out.
+- **Under a list the job is part of the scope.** `BatchScope.list(_:job:)`
+  takes the job because the job picks the lines — Cap takes `ncover:cap`,
+  Square and Pad `ncover:square` — so a Cap run and a Square run over one
+  export are *different scopes*. The job is therefore in `sampleKey`; take it
+  out and the survey will show the previous job's lines.
+- **A line whose first column is not an absolute folder is skipped and
+  counted, by line number.** ndisc writes "artist — title" there when a
+  release has no folder at all, so this is a normal thing to meet, not a
+  corrupt file. A list that quietly shrinks is worse than one that complains.
+- **The second column is a cover only when it is one**: an image path *inside*
+  that line's folder. A hand-made list may put a note there, and a path
+  outside the folder must never be touched whatever it says.
+- **`leftOut` counts in ndisc's own action order**, so the most upstream work
+  reads first ("112 need a new source · 24 to review"). Those lines belong to
+  a person or to ndisc; naming them is how a Cap run over 24 of 2,000 covers
+  stops looking like a mistake.
+- **A framing takes a list whole.** `.frame` has no `listAction`, so every
+  line is in — "run Cover over these three releases" is a sensible request,
+  not an oversight.
 - **ndisc's manifest is at `~/.local/share/ndisc-suite/published.json` on
   macOS too**, not Application Support. That is ndisc's own decision, made so
   every app in the suite resolves it identically; this app follows it rather

@@ -17,10 +17,14 @@ import SwiftUI
 @MainActor
 final class BatchRunner: ObservableObject {
     enum Scope: String, CaseIterable, Identifiable {
-        case folder, published
+        case folder, list, published
         var id: String { rawValue }
         var label: String {
-            self == .folder ? "A folder" : "ndisc's published releases"
+            switch self {
+            case .folder:    return "A folder"
+            case .list:      return "From a list…"
+            case .published: return "ndisc's published releases"
+            }
         }
     }
 
@@ -49,6 +53,11 @@ final class BatchRunner: ObservableObject {
     // What to run
     @Published var scope: Scope = .folder
     @Published var sourceFolder: URL?
+    /// The cover list file, and what parsing it gave. Parsed when it is
+    /// chosen rather than on every survey: it is a file someone picked, and
+    /// re-reading it per keystroke would be its own surprise.
+    @Published private(set) var listPath: URL?
+    @Published private(set) var coverList: CoverList?
     @Published var outputFolder: URL?
     @Published var needle = ""
     @Published var canvas = CANVAS_DEFAULT
@@ -148,6 +157,14 @@ final class BatchRunner: ObservableObject {
         switch scope {
         case .folder:
             if sourceFolder == nil { return "Choose a source folder." }
+        case .list:
+            if listPath == nil { return "Choose a cover list." }
+            guard let l = coverList, !l.lines.isEmpty else {
+                return "That list has no usable line: each one needs an absolute release folder in its first column."
+            }
+            if l.lines.allSatisfy({ !l.selects($0, job: recipe.job) }) {
+                return BatchError.listEmpty.localizedDescription
+            }
         case .published:
             if manifestPath == nil {
                 return "ndisc has not exported a manifest, so there is nothing published to batch over."
@@ -167,11 +184,18 @@ final class BatchRunner: ObservableObject {
         case .folder:
             guard let src = sourceFolder else { throw BatchError.manifestEmpty }
             return .folder(src)
+        case .list:
+            guard let l = coverList else { throw BatchError.listEmpty }
+            return try .list(l, job: recipe.job)
         case .published:
             guard let p = manifestPath else { throw BatchError.manifestMissing }
             return try .published(try loadManifest(at: p))
         }
     }
+
+    /// What this run leaves to a person or to ndisc, in words. Empty unless a
+    /// list with an actions column is driving it.
+    var leftOut: String { coverList?.leftOut(job: recipe.job) ?? "" }
 
     // MARK: - surveying
 
@@ -239,7 +263,8 @@ final class BatchRunner: ObservableObject {
     /// Everything a sample depends on, as one value — so no change can leave a
     /// stale picture on screen next to the controls that no longer made it.
     var sampleKey: String {
-        [scope.rawValue, sourceFolder?.path ?? "", needle, String(canvas), String(describing: job),
+        [scope.rawValue, sourceFolder?.path ?? "", listPath?.path ?? "", needle,
+         String(canvas), String(describing: job),
          String(describing: padFill), discOn ? "disc" : "plain", fill.rawValue,
          fillColour.rgb.hex].joined(separator: "|")
     }
@@ -248,6 +273,23 @@ final class BatchRunner: ObservableObject {
 
     func chooseSource() {
         if let u = pickFolder("Choose the folder of artwork") { sourceFolder = u }
+    }
+
+    func chooseList() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "ndisc's Export list, or a text file with one release folder per line"
+        guard panel.runModal() == .OK, let u = panel.url else { return }
+        listPath = u
+        do {
+            coverList = try readCoverList(at: u)
+            error = nil
+        } catch {
+            coverList = nil
+            self.error = error.localizedDescription
+        }
     }
 
     func chooseOutput() {

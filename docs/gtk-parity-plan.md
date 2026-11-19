@@ -201,6 +201,22 @@ The actual interop surface, and the reason any of this is urgent.
 
 Release as **0.8.0**.
 
+**Status (2026-11-20): done.** `parseCoverList` / `CoverList`,
+`BatchScope.list(_:job:)` with `only` for the named cover, `leftOut` in
+ndisc's action order, and the scope row in the batch sheet. Two things worth
+recording:
+
+- **`BatchScope.images(under:needle:)` had to be introduced** before the
+  restriction could exist, because `findImages(in:)` and `surveyBatch` each
+  walked a root themselves. Now both go through it, which is also the
+  structural answer to "the survey and the run must agree".
+- **The job is part of the scope under a list**, so it is in `sampleKey`. That
+  was in the plan, and it is the one easy thing to lose later.
+
+Not verified in a window, and not yet against a list ndisc actually exported:
+the test for that is opt-in behind `NCOVER_LIST`, ready for the first real
+export.
+
 ## Phase D: the review surface
 
 - **One model, two views.** A grid of every file the run would touch and a

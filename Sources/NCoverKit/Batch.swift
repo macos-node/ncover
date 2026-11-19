@@ -32,8 +32,59 @@ public struct BatchScope: Equatable, Sendable {
     /// than a list of records.
     public var names: [String: String]
 
-    public init(roots: [URL], strip: URL, guardRoot: URL, names: [String: String] = [:]) {
-        self.roots = roots; self.strip = strip; self.guardRoot = guardRoot; self.names = names
+    /// Roots that contribute **one named file** rather than everything under
+    /// them, by root path.
+    ///
+    /// A line of ndisc's Export list names the exact cover its flags are
+    /// about, and a release folder usually holds back and inlay art too. This
+    /// has to live in the scope rather than be a filter applied afterwards,
+    /// or the survey and the run could select different files — the number on
+    /// the Run button is only true because they cannot.
+    public var only: [String: URL]
+
+    public init(roots: [URL], strip: URL, guardRoot: URL, names: [String: String] = [:],
+                only: [String: URL] = [:]) {
+        self.roots = roots; self.strip = strip; self.guardRoot = guardRoot
+        self.names = names; self.only = only
+    }
+
+    /// Every image one root contributes: the file the list named, or a walk.
+    ///
+    /// The single place a root is turned into files. `findImages(in:)` (the
+    /// run, the samples) and `surveyBatch` (the counts) both come through
+    /// here, so there is nothing that could drift.
+    public func images(under root: URL, needle: String) -> [URL] {
+        guard let one = only[root.standardizedFileURL.path] else {
+            var out: [URL] = []
+            findImages(root: root, needle: needle, into: &out)
+            return out
+        }
+        let want = needle.lowercased()
+        guard IMAGE_EXTS.contains(one.pathExtension.lowercased()),
+              FileManager.default.fileExists(atPath: one.path),
+              want.isEmpty || one.lastPathComponent.lowercased().contains(want)
+        else { return [] }
+        return [one]
+    }
+
+    /// A list of release folders — ndisc's Export list, or a hand-made one.
+    ///
+    /// The job is a parameter because **the job picks the lines**: a Cap run
+    /// and a Square run over one export are different scopes. Which is why
+    /// the job has to be part of whatever key re-surveys the scope.
+    public static func list(_ l: CoverList, job: BatchJob) throws -> BatchScope {
+        let chosen = l.lines.filter { l.selects($0, job: job) }
+        guard !chosen.isEmpty else { throw BatchError.listEmpty }
+        guard let root = l.root else { throw BatchError.listNoRoot }
+        var names: [String: String] = [:]
+        var only: [String: URL] = [:]
+        for line in chosen {
+            let key = line.folder.standardizedFileURL.path
+            if let n = line.name { names[key] = n }
+            if let c = line.cover { only[key] = c }
+        }
+        return BatchScope(roots: chosen.map(\.folder), strip: root, guardRoot: root,
+                          names: names, only: only)
     }
 
     public static func folder(_ root: URL) -> BatchScope {
@@ -71,6 +122,9 @@ public enum BatchError: LocalizedError, Equatable {
     case destinationTaken(first: String, dest: String)
     /// A keep-format job met a format this app does not write.
     case keepFormatUnsupported(String)
+    case listUnreadable(String)
+    case listEmpty
+    case listNoRoot
 
     public var errorDescription: String? {
         switch self {
@@ -88,6 +142,12 @@ public enum BatchError: LocalizedError, Equatable {
             return "would overwrite the output of \(first) (\(dest)); not written"
         case .keepFormatUnsupported(let ext):
             return "Cap, Square and Pad keep each file's own format and cannot write .\(ext); left as it is"
+        case .listUnreadable(let name):
+            return "Could not read \(name) as text. A cover list is one release folder per line."
+        case .listEmpty:
+            return "No line in that list is for this job. Check the job against the list's actions column — Cap takes the `ncover:cap` lines and Square the `ncover:square` ones."
+        case .listNoRoot:
+            return "The folders in that list have no parent in common, so there is nothing for the output to mirror."
         }
     }
 }
@@ -174,7 +234,7 @@ public func findImages(root: URL, needle: String, into out: inout [URL]) {
 /// twice).
 public func findImages(in scope: BatchScope, needle: String) -> [URL] {
     var hits: [URL] = []
-    for root in scope.roots { findImages(root: root, needle: needle, into: &hits) }
+    for root in scope.roots { hits += scope.images(under: root, needle: needle) }
     var seen = Set<String>()
     return hits.filter { seen.insert($0.standardizedFileURL.path).inserted }
         .sorted { $0.path < $1.path }
@@ -236,8 +296,7 @@ public func surveyBatch(_ scope: BatchScope, needle: String) -> BatchSurvey {
     var total = 0
 
     for root in scope.roots {
-        var hits: [URL] = []
-        findImages(root: root, needle: needle, into: &hits)
+        let hits = scope.images(under: root, needle: needle)
         // A file reachable from two roots (nested releases) belongs to the
         // first that found it, so the totals here match what a run writes.
         let fresh = hits.filter { seen.insert($0.standardizedFileURL.path).inserted }

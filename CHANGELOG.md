@@ -8,11 +8,29 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
-Phases A and B of [`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the
-write layer, and the three jobs that tidy a library's covers rather than
-reframe them.
+Phases A, B and C of [`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the
+write layer, the three jobs that tidy a library's covers rather than reframe
+them, and ndisc's Export list as a scope. Three of the four steps of the cover
+review loop now run in the two apps.
 
 ### Added
+- **From a list… — ndisc's Export list as a batch scope.** Point it at the
+  file ndisc's *Local covers vs Blossom* writes (or any text file with one
+  release folder per line) and the releases in it become the folders to walk.
+  **Where a line names its cover file, only that file is taken**, so a
+  release's back or inlay art is never caught up in a run. The release is
+  named "Artist — Title" from the list rather than by its path.
+- **The job picks the lines.** With ndisc's actions column, Cap takes the
+  `ncover:cap` lines and Square and Pad the `ncover:square` ones, so one
+  export drives several runs. What this run does not take is **counted and
+  named** in ndisc's own order — "not in this run: 112 need a new source · 24
+  to review" — because those lines belong to a person or to ndisc, not to
+  nobody. A list with no actions column puts every line in, which is what
+  makes a hand-made list work.
+- A line whose first column is not an absolute release folder is skipped and
+  reported with its line number — ndisc writes "artist — title" there for a
+  release that has no folder — and the chosen list says what it holds before
+  any job is applied to it.
 - **Cap, Square and Pad** — three batch jobs that are not framings. They keep
   each file's name and format (a JPEG stays a JPEG at quality 92) and **write
   nothing at all for a file they would not change**, which is what makes a run

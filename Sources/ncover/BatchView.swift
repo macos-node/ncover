@@ -33,6 +33,24 @@ struct BatchView: View {
                                 Button("Choose…") { run.chooseSource() }
                             }
                         }
+                    } else if run.scope == .list {
+                        LabeledContent("List") {
+                            HStack {
+                                Text(run.listPath?.path(percentEncoded: false) ?? "—")
+                                    .lineLimit(1).truncationMode(.head)
+                                    .foregroundStyle(run.listPath == nil ? .tertiary : .primary)
+                                Spacer()
+                                Button("Choose…") { run.chooseList() }
+                            }
+                        }
+                        .tip("ndisc's Export list, from Local covers vs Blossom — or any text file with one release folder per line. Where a line names its cover file, only that file is taken.")
+                        if let l = run.coverList {
+                            Text(listSummary(l)).font(.caption).foregroundStyle(.secondary)
+                            if !l.skipped.isEmpty {
+                                Text("\(l.skipped.count) line\(l.skipped.count == 1 ? "" : "s") skipped — no absolute release folder: \(l.skipped.prefix(8).map(String.init).joined(separator: ", "))\(l.skipped.count > 8 ? "…" : "")")
+                                    .font(.caption).foregroundStyle(.orange)
+                            }
+                        }
                     } else if let p = run.manifestPath {
                         LabeledContent("Manifest") {
                             Text(p.path(percentEncoded: false))
@@ -183,6 +201,13 @@ struct BatchView: View {
                     if run.surveying { ProgressView().controlSize(.small) }
                     Spacer()
                 }
+                if !run.leftOut.isEmpty {
+                    // What the list holds for someone else. Counted and named
+                    // rather than missing: a line this job does not take has
+                    // not been dealt with, it is just not this run's work.
+                    Text("not in this run: \(run.leftOut)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if s.total == 0 {
                     Text(run.needle.isEmpty
                          ? "No images found under that scope."
@@ -227,8 +252,17 @@ struct BatchView: View {
         }
     }
 
+    /// What the chosen list holds, before any job is applied to it.
+    private func listSummary(_ l: CoverList) -> String {
+        var out = "\(l.lines.count) release\(l.lines.count == 1 ? "" : "s")"
+        let named = l.lines.filter { $0.cover != nil }.count
+        if named > 0 { out += " · \(named) name a cover file" }
+        out += l.hasActions ? " · with ndisc's actions" : " · no actions column, so every line is in"
+        return out
+    }
+
     private func headline(_ s: BatchSurvey) -> String {
-        let what = run.scope == .published ? "release" : "folder"
+        let what = run.scope == .folder ? "folder" : "release"
         var out = "\(s.total) image\(s.total == 1 ? "" : "s")"
         out += " in \(s.groups.count) \(what)\(s.groups.count == 1 ? "" : "s")"
         if s.emptyRoots > 0 {
