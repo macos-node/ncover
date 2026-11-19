@@ -24,7 +24,7 @@ struct HelpView: View {
                 card("Artwork", "square.on.circle", [
                     "Open a PNG, SVG, JPEG or WebP — or browse a folder and step through it with ← and →.",
                     "Place it on a square canvas: drag, zoom, Cover or Fit. Then stack build steps — a background, Invert, a centred square, a disc or label mask.",
-                    "Save writes a PNG, or an SVG when every step in the composition has a vector form. Overwrite replaces the original in its own format, and asks first.",
+                    "Save writes a PNG or a JPEG, or an SVG when every step in the composition has a vector form. Overwrite replaces the original in its own format, and asks first.",
                 ])
 
                 card("Batch", "square.stack.3d.down.right", [

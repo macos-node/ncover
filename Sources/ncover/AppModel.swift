@@ -237,8 +237,8 @@ final class AppModel: ObservableObject {
 
     var saveHelp: String {
         canSaveVector
-            ? "Save as PNG, or as SVG to keep it vector at any size."
-            : "Save as PNG. SVG is unavailable because " + (vectorRefusal ?? "") + "."
+            ? "Save as PNG or JPEG, or as SVG to keep it vector at any size."
+            : "Save as PNG or JPEG. SVG is unavailable because " + (vectorRefusal ?? "") + "."
     }
 
     /// One row of the operation list, for showing. This is the app's actual
@@ -607,13 +607,21 @@ final class AppModel: ObservableObject {
     func saveAs() {
         guard let d = doc else { return }
         let panel = NSSavePanel()
-        // SVG is offered only when the document can actually produce it.
-        panel.allowedContentTypes = canSaveVector ? [.png, .svg] : [.png]
+        // PNG, JPEG, and SVG only when the document can actually produce it.
+        //
+        // JPEG here is a deliberate departure from the GTK sibling, whose
+        // Save is PNG-only and whose backlog still calls this "its own
+        // change". The write layer already encodes it with the alpha rule,
+        // and a cover that is a photograph has no transparency to lose, so
+        // refusing to write one would be the app being precious rather than
+        // careful. A render WITH transparency is still refused, by the same
+        // rule Overwrite uses.
+        panel.allowedContentTypes = canSaveVector ? [.png, .jpeg, .svg] : [.png, .jpeg]
         panel.nameFieldStringValue =
             (sourceURL?.deletingPathExtension().lastPathComponent ?? "artwork") + ".png"
         panel.message = canSaveVector
-            ? "PNG rasterises. SVG keeps the artwork as vector at any size."
-            : "Saving as PNG — SVG unavailable because \(vectorRefusal ?? "")."
+            ? "PNG keeps transparency. JPEG is smaller and has no alpha. SVG keeps the artwork as vector at any size."
+            : "PNG keeps transparency; JPEG is smaller and has no alpha. SVG unavailable because \(vectorRefusal ?? "")."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             if url.pathExtension.lowercased() == "svg" {
@@ -624,7 +632,11 @@ final class AppModel: ObservableObject {
                 }
                 try svg.write(to: url, atomically: true, encoding: .utf8)
             } else {
-                try renderRaster(d).writePNG(to: url)
+                // The panel's own extension decides, so "cover.jpg" typed by
+                // hand writes a JPEG rather than a PNG under a name that says
+                // otherwise. Anything else is a PNG, as it always was.
+                let out = lastRender ?? renderRaster(d)
+                try out.write(to: url, as: ImageFormat.of(url) ?? .png, alpha: .refuse)
             }
             error = nil
         } catch {

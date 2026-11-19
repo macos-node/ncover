@@ -272,6 +272,26 @@ struct CoverListTests {
             not in a Square run: \(l.leftOut(job: .square))
             """)
         try #require(!l.lines.isEmpty)
+
+        // The whole chain the Batch pane walks: list → scope → files → plan.
+        // Each number is one the app shows somewhere, so a disagreement here
+        // is a disagreement on screen.
+        for job in [BatchJob.frame(.cover), .cap, .square] {
+            guard let scope = try? BatchScope.list(l, job: job) else {
+                print("  \(job.name): no scope — no line is for this job"); continue
+            }
+            let files = findImages(in: scope, needle: "")
+            let survey = surveyBatch(scope, needle: "")
+            let plan = planItems(files: files, scope: scope,
+                                 recipe: Recipe(canvas: 400, job: job, disc: nil))
+            print("  \(job.name): \(scope.roots.count) roots · \(files.count) files · "
+                  + "survey \(survey.total) in \(survey.groups.count), \(survey.emptyRoots) empty · "
+                  + "plan \(plan.count)")
+            if plan.isEmpty, !files.isEmpty {
+                print("  !! files but no plan — first: \(files[0].path), "
+                      + "size \(String(describing: imageSize(of: files[0])))")
+            }
+        }
         // Every folder it names is a folder, and every cover it names is in it.
         for line in l.lines {
             #expect(FileManager.default.fileExists(atPath: line.folder.path),

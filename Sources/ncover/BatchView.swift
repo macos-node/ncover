@@ -25,6 +25,7 @@ struct BatchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HSplitView {
             Form {
                 Section("What to run it over") {
                     Picker("Scope", selection: $run.scope) {
@@ -143,15 +144,40 @@ struct BatchView: View {
                 }
 
                 scopeSurvey
-                planGrid
-                if !run.rows.isEmpty { results }
+                filesList
             }
             .formStyle(.grouped)
+            .frame(minWidth: 360, idealWidth: 420)
+
+            // The grid gets the rest of the window, and that is the whole
+            // point of it. It sat under the controls in one scrolling column
+            // to begin with, which put it below fifteen release rows — a
+            // preview you have to go looking for is one you will not look at,
+            // and the first real run was made without ever seeing it.
+            reviewPane
+                .frame(minWidth: 300)
+        }
 
             Divider()
             footer
         }
-        .frame(minWidth: 520)
+        .frame(minWidth: 860, idealWidth: 1000, minHeight: 560, idealHeight: 760)
+        // Re-survey when the scope, the filter or the recipe changes — and
+        // on the whole view, not on a section inside the Form. It lived on
+        // the survey's Section, whose branch is replaced the moment the first
+        // survey lands, which tore the task down mid-flight and left the grid
+        // empty beside counts that said fifteen.
+        //
+        // The overwrite count is in the id for the recount: a cover squared
+        // by hand in the editor changes on disk, so the counts and the grid
+        // have to be re-read rather than keep describing the file as it was.
+        .task(id: "\(run.sampleKey)|\(model.overwriteCount)") {
+            // A beat, so no walk starts on every keystroke or every notch of
+            // a slider.
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await run.refreshSurvey()
+        }
         .alert("Batch", isPresented: Binding(
             get: { run.error != nil }, set: { if !$0 { run.error = nil } }
         )) {
@@ -159,48 +185,85 @@ struct BatchView: View {
         } message: { Text(run.error ?? "") }
     }
 
-    /// Every file the run would touch, as a grid, with the same files
-    /// numbered in a list beside it.
+    /// The right pane: every file the run would touch, as a grid — or the
+    /// last run's results once there are some.
     ///
-    /// This replaces the four automatic samples and the twelve-thumbnail
-    /// preview, and it replaces them because it is both of those done
-    /// properly: it is always current, it shows everything rather than the
-    /// first few, and under a keep-format job it shows **only the files the
-    /// run would change** — so its length is the Run button's count.
-    ///
-    /// The grid and the list are one array under one selection, which is why
-    /// their numbers agree.
+    /// The grid replaced the four automatic samples and the twelve-thumbnail
+    /// preview, and it replaced them because it is both of those done
+    /// properly: always current, every file rather than the first few, and
+    /// under a keep-format job **only the files the run would change**, so its
+    /// length is the Run button's count.
     @ViewBuilder
-    private var planGrid: some View {
-        if !run.plan.isEmpty || run.planning {
-            Section {
-                HStack(spacing: 8) {
-                    Toggle("Before", isOn: $run.showBefore)
-                        .toggleStyle(.button)
-                        .tip("Show the files as they are now, rather than as the run would write them.")
-                    if run.planning { ProgressView().controlSize(.small) }
-                    Spacer()
-                    if let item = run.selectedItem {
-                        Button("Open folder") { run.revealInFinder(item) }
-                            .tip("Show this cover in the Finder — for replacing one by hand.")
-                        Button("Edit") { openInEditor(item) }
-                            .tip("Open this file in the editor. The grid becomes the browse list, so ← and → step through it in this order.")
+    private var reviewPane: some View {
+        VStack(spacing: 0) {
+            reviewHeader
+            Divider()
+            if !run.rows.isEmpty {
+                resultsList
+            } else if run.plan.isEmpty {
+                VStack(spacing: 6) {
+                    if run.planning {
+                        ProgressView().controlSize(.small)
+                        Text("Working out what it would touch…")
+                    } else {
+                        // Not `blocker`: that is about running, and the
+                        // preview does not need an output folder.
+                        Text(run.scopeHint)
+                            .multilineTextAlignment(.center)
                     }
                 }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
-                    ForEach(run.plan) { item in
-                        cell(item)
-                    }
-                }
-                .padding(.vertical, 2)
-            } header: {
-                HStack {
-                    Text(run.showBefore ? "The files as they are" : "What the run would write")
-                    Spacer()
-                    Text("\(run.plan.count)").monospacedDigit().foregroundStyle(.tertiary)
+                .font(.callout).foregroundStyle(.secondary)
+                .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                grid
+            }
+        }
+        .background(Color(.underPageBackgroundColor))
+    }
+
+    private var reviewHeader: some View {
+        HStack(spacing: 8) {
+            Text(run.rows.isEmpty
+                 ? (run.showBefore ? "The files as they are" : "What the run would write")
+                 : "Results")
+                .font(.headline)
+            if run.planning { ProgressView().controlSize(.small) }
+            Spacer()
+            if run.rows.isEmpty {
+                Text("\(run.plan.count)").monospacedDigit().foregroundStyle(.secondary)
+                Toggle("Before", isOn: $run.showBefore)
+                    .toggleStyle(.button)
+                    .disabled(run.plan.isEmpty)
+                    .tip("Show the files as they are now, rather than as the run would write them.")
+            }
+            if let item = run.selectedItem {
+                Button("Open folder") { run.revealInFinder(item) }
+                    .tip("Show this cover in the Finder — for replacing one by hand.")
+                Button("Edit") { openInEditor(item) }
+                    .tip("Open this file in the editor. The grid becomes the browse list, so ⌘[ and ⌘] step through it in this order.")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private var grid: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 10)], spacing: 10) {
+                ForEach(run.plan) { item in
+                    cell(item)
                 }
             }
+            .padding(12)
+        }
+    }
 
+    /// The same files, numbered, under the controls. One array, one selection:
+    /// that is why the numbers agree and why picking in either moves the other.
+    @ViewBuilder
+    private var filesList: some View {
+        if !run.plan.isEmpty {
             Section("Files") {
                 ForEach(run.plan) { item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -224,8 +287,11 @@ struct BatchView: View {
                     .background(run.selected == item.id
                                 ? Color.accentColor.opacity(0.14) : Color.clear)
                     .contentShape(Rectangle())
-                    .onTapGesture { run.selected = item.id }
+                    // The DOUBLE tap is declared first, and has to be: with
+                    // the single first, SwiftUI resolves that one and the
+                    // double never fires at all.
                     .onTapGesture(count: 2) { openInEditor(item) }
+                    .onTapGesture { run.selected = item.id }
                 }
             }
         }
@@ -235,7 +301,7 @@ struct BatchView: View {
     /// before. A plan is thousands of files; rendering it up front is not an
     /// option, and the `.task` goes away with the cell when it scrolls off.
     private func cell(_ item: PlanItem) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 3) {
             ZStack {
                 MiniChecker()
                 if let i = run.thumb(item, before: run.showBefore) {
@@ -244,7 +310,7 @@ struct BatchView: View {
                     ProgressView().controlSize(.small)
                 }
             }
-            .frame(width: 84, height: 84)
+            .frame(width: 96, height: 96)
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .overlay(RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(run.selected == item.id ? Color.accentColor : Color(.separatorColor),
@@ -254,10 +320,13 @@ struct BatchView: View {
                 .foregroundStyle(run.selected == item.id ? .primary : .tertiary)
         }
         .contentShape(Rectangle())
-        .onTapGesture { run.selected = item.id }
+        // Double first — see the Files list above.
         .onTapGesture(count: 2) { openInEditor(item) }
+        .onTapGesture { run.selected = item.id }
         .tip("\(item.number) · \(item.name)\n\(item.words.isEmpty ? item.rel : item.words)")
-        .task(id: "\(item.id)|\(run.showBefore)|\(run.sampleKey)") {
+        // Watches what decides the picture, not everything that triggers a
+        // refresh: choosing an output folder must not restart every render.
+        .task(id: "\(item.id)|\(run.showBefore)|\(run.thumbKey)") {
             await run.requestThumb(item, before: run.showBefore)
         }
     }
@@ -294,46 +363,17 @@ struct BatchView: View {
                          ? "No images found under that scope."
                          : "Nothing matches “\(run.needle)”. Clear the filter to take every image.")
                         .font(.caption).foregroundStyle(.orange)
-                } else {
-                    ForEach(s.groups) { g in
-                        DisclosureGroup {
-                            ForEach(g.files, id: \.self) { f in
-                                Text(f)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1).truncationMode(.head)
-                            }
-                        } label: {
-                            HStack {
-                                Text(g.name).lineLimit(1)
-                                Spacer()
-                                Text("\(g.files.count)")
-                                    .monospacedDigit().foregroundStyle(.tertiary)
-                            }
-                            .font(.callout)
-                        }
-                    }
                 }
+                // The per-release disclosure list that used to be here is
+                // gone: the numbered Files list below says the same thing
+                // better (it is the grid's own order, with each file's size
+                // change), and fifteen expandable rows between the controls
+                // and the grid is what pushed the grid off the window.
             } else if run.surveying {
                 HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Looking…") }
             } else {
                 Text("Choose a scope.").font(.callout).foregroundStyle(.tertiary)
             }
-        }
-        // Re-survey when the scope or the filter changes. The id covers all
-        // three inputs, so no change can leave a stale count on screen.
-        // The overwrite count is in here for the recount: a cover squared by
-        // hand in the editor changes on disk, so the survey, the plan and the
-        // Run button have to be re-read when you come back rather than
-        // describing the file as it was.
-        .task(id: "\(run.sampleKey)|\(model.overwriteCount)") {
-            // A beat, so neither a walk nor a render starts on every keystroke
-            // or every notch of a slider.
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            await run.refreshSurvey()
-            guard !Task.isCancelled else { return }
-            await run.refreshPlan()
         }
     }
 
@@ -360,8 +400,9 @@ struct BatchView: View {
     }
 
     @ViewBuilder
-    private var results: some View {
-        Section("Results") {
+    private var resultsList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
             ForEach(run.rows) { row in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     switch row.outcome {
@@ -386,7 +427,10 @@ struct BatchView: View {
                     }
                 }
                 .font(.callout)
+                .padding(.horizontal, 12)
             }
+            }
+            .padding(.vertical, 8)
         }
     }
 

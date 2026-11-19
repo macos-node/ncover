@@ -276,10 +276,12 @@ double-click hand-off.
   grid flagged can be squared by hand and written back. It keeps JPEG as JPEG
   (phase A), and its confirm says what it will write: the original's size, and
   "600 × 600, JPEG at quality 92".
-- Save stays **PNG (and SVG where the document can)**: GTK's Save is PNG-only
-  too, and "JPEG export" in this plan means Overwrite and the keep-format
-  batch jobs, not a JPEG item in the save panel. A draggable crop saved as
-  JPEG from the editor is on *their* backlog, not in their app.
+- Save was to stay **PNG (and SVG where the document can)**, GTK's Save being
+  PNG-only. **Changed on the user's ask, 2026-11-20:** the panel offers JPEG
+  too. It is a departure and is recorded as one — a draggable crop saved as
+  JPEG is on the GTK backlog, and this is half of that arriving here first.
+  The alpha rule is unchanged: a render with transparency is refused, by the
+  same guard Overwrite uses, so a disc mask cannot be written as black.
 - The rest is furniture, and only worth doing if D lands: Batch as a place of
   its own rather than a sheet, the editor's side columns hideable, the Quick
   start as a page behind ⓘ, and the monochrome treatment for a chosen segment

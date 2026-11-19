@@ -8,6 +8,81 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [1.0.5] — 2026-11-20
+
+### Added
+- **Save as JPEG.** The save panel offers PNG, JPEG and (where the document
+  can produce one) SVG. A render with transparent areas is refused for a JPEG
+  rather than flattened onto a colour nobody chose — the same rule Overwrite
+  follows — so a disc mask cannot be written as black. A departure from the
+  GTK sibling, whose Save is PNG-only; recorded as one in the parity plan.
+
+### Fixed
+- **Double-clicking a cover in Batch opens it in Artwork.** It never did: the
+  single-tap gesture was declared before the double, so SwiftUI resolved the
+  single one and the double never fired at all. The grid's files still become
+  the editor's browse list, so ⌘[ and ⌘] step through them in the grid's
+  order.
+
+## [1.0.4] — 2026-11-20
+
+### Fixed
+- The footer kept the last run's counts while you changed the recipe, so
+  "15 written" sat under a plan of three — a sentence about a run nobody can
+  see any more, reading as a claim about this one. The counts now go when the
+  results do.
+- **The grid flashed its thumbnails and went blank.** They were keyed by a
+  counter bumped on every refresh, and that lost a race it could not win:
+  changing the job re-renders the cells at once, while the refresh behind it
+  is debounced by 300 ms — so the pictures arrived, the refresh cleared the
+  cache underneath them, and nothing re-requested, because the cells' own
+  inputs had not changed again. Which jobs it happened to was pure timing,
+  which is why Square looked fine and Pad did not. A thumbnail is now keyed by
+  what it is — this file, under this recipe, before or after — so a refresh
+  that cannot change a picture does not disturb it, and switching back to a
+  job you have already looked at is instant.
+
+## [1.0.3] — 2026-11-20
+
+### Fixed
+- **The grid needed an output folder, which is why it was empty.** The plan
+  was built only when a run could go, and "choose an output folder" is part
+  of that — so choosing a list gave you the counts and an empty grid, and
+  choosing the output afterwards did not rebuild it, because the output
+  folder was not among the inputs that trigger a rebuild either. The two
+  together left the grid empty for as long as the window stayed open. Where
+  the results go has nothing to do with what the run would touch: the preview
+  now asks for a scope and a recipe and nothing else, and the Run button goes
+  on carrying the rest. The empty state says which of those is missing rather
+  than naming the output folder.
+
+## [1.0.2] — 2026-11-20
+
+### Fixed
+- **The grid stayed empty beside counts that said fifteen.** The survey and
+  the plan were two steps with a cancellation check between them, and the plan
+  lost that race every time: the first survey publishes into the very view
+  that hosted the task, so the task was torn down between the two. They are
+  one walk and one moment now — the counts and the grid cannot arrive
+  separately — and the task sits on the whole view rather than on a section
+  inside the form. `NCOVER_TRACE_PLAN=1` prints what each refresh found, to
+  stderr, in the same spirit as `NCOVER_TRACE_HOVER`.
+
+## [1.0.1] — 2026-11-20
+
+### Fixed
+- **The review grid was below the fold, which is the same as not being
+  there.** Batch laid its controls, the survey and the grid out in one
+  scrolling column, so with fifteen releases in a list the grid sat under
+  fifteen expandable rows and off the bottom of the window — and the first
+  real run from a list was made without it ever being seen. Batch is now two
+  panes: the controls and the numbered Files list on the left, and the grid
+  filling the rest of the window, with the last run's results taking its place
+  until the recipe changes.
+- The survey's per-release disclosure list is gone with it. The Files list
+  says the same thing better — the grid's own order, each file's size change —
+  and the long list was what pushed the grid away.
+
 ## [1.0.0] — 2026-11-20
 
 All five phases of [`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the

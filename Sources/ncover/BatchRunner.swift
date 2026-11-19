@@ -119,11 +119,7 @@ final class BatchRunner: ObservableObject {
     /// Show the files as they are now rather than as the run would write them.
     @Published var showBefore = false
 
-    /// Bumped every time the plan is rebuilt. A thumbnail that finishes
-    /// rendering for an older plan is dropped rather than drawn: the recipe it
-    /// was rendered under is no longer the one on screen.
-    private var planGeneration = 0
-    /// Rendered thumbnails, by "generation|before|path".
+    /// Rendered thumbnails, by file, recipe and before/after.
     @Published private(set) var thumbs: [String: NSImage] = [:]
     private var inFlight = Set<String>()
 
@@ -135,6 +131,9 @@ final class BatchRunner: ObservableObject {
     /// An SVG source has to go through the main actor anyway (WKWebView), so
     /// those serialise regardless of this number.
     private static let thumbWorkers = 4
+    /// How many rendered cells to keep across recipe changes before starting
+    /// over. Switching Cover → Cap → Cover should be instant the second time.
+    private static let thumbCap = 600
     private var rendering = 0
 
     var manifestPath: URL? { publishedManifestPath() }
@@ -217,59 +216,109 @@ final class BatchRunner: ObservableObject {
     /// Off the main actor: it is only a directory walk and decodes nothing,
     /// but a library of a few thousand releases is still a few thousand
     /// `contentsOfDirectory` calls and the filter field has to stay typeable.
+    /// Recompute what the run would touch: the counts **and** the plan.
+    ///
+    /// One function and one `await`, deliberately. These were two — survey,
+    /// then plan — behind a `Task.isCancelled` check between them, and the
+    /// plan lost that race: the first survey publishes into the view that
+    /// hosts the task, the task is torn down at that moment, and the grid
+    /// stayed empty while the counts beside it said fifteen. Two numbers from
+    /// one walk must not be able to arrive separately.
+    ///
+    /// Off the main actor and header-reads only, so it can run over a whole
+    /// library and stay current while the recipe is being changed.
+    /// **It asks for a scope and a recipe, and nothing else.** The plan used
+    /// to be gated on `blocker == nil`, which includes "choose an output
+    /// folder" — so picking a list built the counts and an empty plan, and
+    /// choosing the output afterwards did not rebuild it, because the output
+    /// folder was not in `sampleKey` either. The grid stayed empty beside
+    /// counts that said fifteen, for as long as the window was open.
+    ///
+    /// Where the results go has nothing to do with what the run would touch.
+    /// The Run button carries the blocker; the preview does not.
     func refreshSurvey() async {
-        guard let scope = try? currentScope() else { survey = nil; changeCount = nil; return }
+        guard let scope = try? currentScope() else {
+            survey = nil; changeCount = nil; plan = []; thumbs = [:]; return
+        }
         let needle = self.needle
-        let job = recipe.job
-        let cap = canvas
+        let r = recipe
         surveying = true
-        defer { surveying = false }
+        planning = true
+        defer { surveying = false; planning = false }
+
         let result = await Task.detached(priority: .userInitiated) {
-            // The change count is taken over the RUN's own file list, so "245
-            // of 2,377" cannot be a count of something else. Header reads
-            // only: nothing is decoded here either.
             let survey = surveyBatch(scope, needle: needle)
-            let changes: Int? = job.keepsFile
-                ? findImages(in: scope, needle: needle)
-                    .filter { wouldChange($0, job: job, canvas: cap) }.count
+            let files = findImages(in: scope, needle: needle)
+            // The change count is taken over the RUN's own file list, so
+            // "245 of 2,377" cannot be a count of something else.
+            let changes: Int? = r.job.keepsFile
+                ? files.filter { wouldChange($0, job: r.job, canvas: r.canvas) }.count
                 : nil
-            return (survey, changes)
+            let plan = planItems(files: files, scope: scope, recipe: r)
+            return (survey, changes, plan)
         }.value
+
         // The filter may have moved on while we walked; the last word wins.
         guard needle == self.needle else { return }
         survey = result.0
         changeCount = result.1
+        // The thumbnails are NOT cleared here. A refresh happens for reasons
+        // that have nothing to do with a picture — a new output folder, a
+        // recount after an overwrite — and clearing on each one is what left
+        // the grid empty.
+        plan = result.2
+        // The last run's counts go with its results. "15 written" sitting
+        // under a plan of three is a sentence about a run nobody can see any
+        // more, and it reads as a claim about this one.
+        total = 0; done = 0; ok = 0; failed = 0; skipped = 0; stopped = false
+        // The last run's results describe a recipe that is no longer on
+        // screen. Clearing them is also what puts the grid back in the pane.
+        rows = []
+        if let sel = selected, !plan.contains(where: { $0.id == sel }) { selected = nil }
+        trace("scope \(scope.roots.count) roots · survey \(result.0.total) · plan \(plan.count)")
     }
 
-    /// Rebuild the plan: every file the run would write, in review order.
-    ///
-    /// Off the main actor and header-reads only, so it can exist for a whole
-    /// library and stay current while the recipe is being changed. The
-    /// generation it bumps is what makes a thumbnail from the previous recipe
-    /// drop rather than appear next to the new one.
-    func refreshPlan() async {
-        guard blocker == nil, let scope = try? currentScope() else {
-            plan = []; thumbs = [:]; return
-        }
-        let needle = self.needle
-        let r = recipe
-        planning = true
-        defer { planning = false }
-        let items = await Task.detached(priority: .userInitiated) {
-            planItems(files: findImages(in: scope, needle: needle), scope: scope, recipe: r)
-        }.value
-        guard needle == self.needle else { return }
-        planGeneration += 1
-        thumbs = [:]
-        inFlight = []
-        plan = items
-        if let sel = selected, !items.contains(where: { $0.id == sel }) { selected = nil }
+    /// Env-gated, and to **stderr on purpose**: `print` is fully buffered when
+    /// redirected to a file, and the hover tracing this copies came back empty
+    /// that way while it was working. Run the binary directly to watch:
+    /// `NCOVER_TRACE_PLAN=1 /Applications/n.cover.app/Contents/MacOS/ncover`
+    private func trace(_ what: @autoclosure () -> String) {
+        guard ProcessInfo.processInfo.environment["NCOVER_TRACE_PLAN"] != nil else { return }
+        FileHandle.standardError.write(Data("[plan] \(what())\n".utf8))
     }
 
     // MARK: - thumbnails
 
-    private func key(_ item: PlanItem, before: Bool) -> String {
-        "\(planGeneration)|\(before ? "before" : "after")|\(item.url.path)"
+    /// What a thumbnail IS: this file, under this recipe, before or after.
+    ///
+    /// It was keyed by a counter bumped on every refresh, and that lost a race
+    /// it could not win. Changing the recipe re-renders the cells at once,
+    /// while the refresh behind it is debounced by 300 ms — so the pictures
+    /// arrived, the refresh then cleared the cache underneath them, and
+    /// nothing re-requested because the cells' own inputs had not changed
+    /// again. The grid flashed and went empty, and which jobs it happened to
+    /// was pure timing.
+    ///
+    /// Keyed by the recipe, none of that can happen: a refresh that does not
+    /// change the picture does not disturb it, and one that does changes the
+    /// key. Nothing has to be invalidated by hand.
+    private func key(_ item: PlanItem, before: Bool, recipe r: Recipe) -> String {
+        "\(before ? "before" : "after")|\(r.canvas)|\(r.job)|\(String(describing: r.disc))|\(item.url.path)"
+    }
+
+    /// Why the grid has nothing in it, in words — about the *scope*, not
+    /// about whether a run could go.
+    var scopeHint: String {
+        switch scope {
+        case .folder where sourceFolder == nil: return "Choose a folder of artwork."
+        case .list where listPath == nil:       return "Choose a cover list."
+        case .published where manifestPath == nil:
+            return "ndisc has not exported a manifest."
+        default:
+            return survey?.total == 0
+                ? "Nothing under that scope matches."
+                : "Nothing this job would change."
+        }
     }
 
     /// The selected row, as an item.
@@ -282,7 +331,14 @@ final class BatchRunner: ObservableObject {
     }
 
     func thumb(_ item: PlanItem, before: Bool) -> NSImage? {
-        thumbs[key(item, before: before)]
+        thumbs[key(item, before: before, recipe: recipe)]
+    }
+
+    /// Everything that decides what a cell shows. The cell's own task watches
+    /// this, so changing the output folder — which cannot change a picture —
+    /// no longer restarts every render in the grid.
+    var thumbKey: String {
+        "\(canvas)|\(recipe.job)|\(discOn ? fill.rawValue + fillColour.rgb.hex : "plain")"
     }
 
     /// Render one cell, if nothing else is already doing it.
@@ -292,29 +348,34 @@ final class BatchRunner: ObservableObject {
     /// option. Through the run's own `renderOne`, so a cell is what the run
     /// would write and not an impression of it.
     func requestThumb(_ item: PlanItem, before: Bool) async {
-        let k = key(item, before: before)
+        // The recipe is read ONCE, here, and both the render and the key it
+        // lands under come from that one value. Reading it again after the
+        // await is how a picture ends up filed under a recipe that did not
+        // make it.
+        let r = recipe
+        let k = key(item, before: before, recipe: r)
         guard thumbs[k] == nil, !inFlight.contains(k) else { return }
+        inFlight.insert(k)
+        defer { inFlight.remove(k) }
         while rendering >= Self.thumbWorkers {
             try? await Task.sleep(for: .milliseconds(40))
             if Task.isCancelled { return }
         }
-        guard thumbs[k] == nil, !inFlight.contains(k) else { return }
-        inFlight.insert(k)
         rendering += 1
-        let generation = planGeneration
-        defer { rendering -= 1; inFlight.remove(k) }
+        defer { rendering -= 1 }
         let image: NSImage?
         if before {
             image = await Task.detached(priority: .utility) {
                 (try? Raster.load(contentsOf: item.url))?.nsImage()
             }.value
         } else {
-            image = try? await renderOne(item.url, recipe: recipe)?.nsImage()
+            image = try? await renderOne(item.url, recipe: r)?.nsImage()
         }
-        // The recipe may have moved on while this rendered. Drawing it now
-        // would put the previous recipe's picture under the current one's
-        // label, which is worse than an empty cell.
-        guard generation == planGeneration, let image else { return }
+        guard let image else { return }
+        // No staleness check: the key names the recipe that made it, so a
+        // picture from a recipe nobody is looking at is simply never asked
+        // for. It costs a little memory and buys back instant switching.
+        if thumbs.count > Self.thumbCap { thumbs = [:] }
         thumbs[k] = image
     }
 
@@ -323,7 +384,11 @@ final class BatchRunner: ObservableObject {
     /// controls that no longer made it. The job belongs here because under a
     /// list scope the job picks the lines, so it is part of the scope itself.
     var sampleKey: String {
-        [scope.rawValue, sourceFolder?.path ?? "", listPath?.path ?? "", needle,
+        // The output folder is in here even though the plan no longer depends
+        // on it: `guardBatch`'s refusals do, and a key that leaves out an
+        // input is exactly how the grid went stale against the controls.
+        [scope.rawValue, sourceFolder?.path ?? "", listPath?.path ?? "",
+         outputFolder?.path ?? "", needle,
          String(canvas), String(describing: job),
          String(describing: padFill), discOn ? "disc" : "plain", fill.rawValue,
          fillColour.rgb.hex].joined(separator: "|")

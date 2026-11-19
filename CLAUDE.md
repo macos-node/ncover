@@ -245,8 +245,12 @@ backend changes.
   left behind.
 - **Cover / Fit output is always PNG.** Not a preference — the disc / label
   mask needs an alpha channel. Cap, Square and Pad are the exception: they
-  tidy a file rather than frame one, so they keep its format. Save offers PNG, and SVG where the document can; **JPEG is the write
-  path, not the save panel**, which is also true of the GTK app.
+  tidy a file rather than frame one, so they keep its format. **Save offers
+  PNG, JPEG, and SVG where the document can** — the JPEG there is a deliberate
+  departure from the GTK sibling, whose Save is PNG-only and whose backlog
+  still calls this "its own change". The alpha rule is the same one Overwrite
+  uses: a render with transparency is refused, not flattened, so a disc mask
+  cannot be written as black.
 - **`imageSize(of:)` reads the header, and that is a measured claim.** On this
   Mac's library: 37 covers, 0.023 s from headers (0.63 ms each) against 1.526 s
   decoding them, 65× — with every answer equal to the decode's. A survey that
