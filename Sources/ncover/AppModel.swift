@@ -204,7 +204,28 @@ final class AppModel: ObservableObject {
     var isVector: Bool { doc?.source.isVector ?? false }
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
-    var canOverwrite: Bool { sourceURL?.pathExtension.lowercased() == "png" }
+    /// Whether Overwrite can go, from the same guard that would refuse it, so
+    /// the button and the refusal cannot disagree. A disabled button that
+    /// knows the rule by itself is a second copy of the rule.
+    var canOverwrite: Bool { overwriteRefusal == nil }
+
+    /// Why Overwrite cannot go, in words meant for a person. `nil` when it can.
+    var overwriteRefusal: String? {
+        guard let url = sourceURL, doc != nil else { return "nothing is open" }
+        do {
+            try guardOverwrite(source: url, resultIsOpaque: renderIsOpaque)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// What Overwrite will write, for its own label and tooltip: "PNG", or
+    /// "JPEG at quality 92".
+    var overwriteFormat: String? {
+        guard let url = sourceURL, let f = ImageFormat.of(url) else { return nil }
+        return f == .png ? "PNG" : "JPEG at quality 92"
+    }
 
     /// Why SVG export is unavailable, in words meant for a person.
     var vectorRefusal: String? { doc?.vectorRefusal ?? "nothing is open" }
@@ -497,12 +518,21 @@ final class AppModel: ObservableObject {
     /// never reaches a renderer.
     @Published private(set) var templateGhost: NSImage?
 
+    /// Whether the current render has any transparency. What a JPEG Overwrite
+    /// turns on, kept beside the render rather than recomputed per read.
+    @Published private(set) var renderIsOpaque = true
+
     func rerender() {
         guard let d = doc else {
-            preview = nil; lastRender = nil; templateGhost = nil; return
+            preview = nil; lastRender = nil; templateGhost = nil
+            renderIsOpaque = true; return
         }
         let r = renderRaster(d)
         lastRender = r
+        // Cached, and published, because Overwrite's own enabled state depends
+        // on it: asking a fresh render for its alpha on every pass of a
+        // SwiftUI body would re-render the composition to draw a tooltip.
+        renderIsOpaque = r.isOpaque
         preview = r.nsImage()
         templateGhost = d.sourceIsTemplate && d.placement != nil
             ? compose(d.source.raster, d.placement!, canvas: d.canvas).nsImage()
@@ -580,12 +610,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Replace the original PNG in place. Guarded: never anything but a PNG.
+    /// Replace the original in place, in **its own format**.
+    ///
+    /// A PNG stays a PNG; a JPEG stays a JPEG at quality 92, and a render with
+    /// transparent areas is refused rather than written as black — the guard
+    /// owns that rule. The file is written beside the original and renamed
+    /// over it, so a failed encode leaves the original whole: the target is
+    /// usually a cover inside a music library.
     func overwrite() {
         guard let d = doc, let url = sourceURL else { return }
         do {
-            try guardOverwrite(source: url)
-            try renderRaster(d).writePNG(to: url)
+            guard let format = ImageFormat.of(url) else {
+                throw WriteGuardError.overwriteUnsupported(
+                    url.pathExtension.isEmpty ? "(none)" : url.pathExtension.lowercased())
+            }
+            // What is on screen, which is what "as shown" in the confirm
+            // means — and `compose` already area-averages on the way down, so
+            // the preview and the written file are the same pixels.
+            let out = lastRender ?? renderRaster(d)
+            try guardOverwrite(source: url, resultIsOpaque: out.isOpaque)
+            try out.replaceFile(at: url, as: format)
             error = nil
         } catch {
             self.error = error.localizedDescription

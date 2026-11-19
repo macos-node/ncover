@@ -10,6 +10,14 @@ a **separate app with the same name and purpose**, written natively for macOS.
 They share no code, by decision: the two are expected to develop differently,
 and a shared core is exactly the coupling that would prevent that.
 
+Features still cross, as behaviour and decisions rather than source.
+[`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md) is the plan for what comes
+*from* there — the cover review loop: JPEG in the write path, the Cap / Square /
+Pad jobs, ndisc's Export list as a scope, and the review grid. Its mirror,
+`docs/macos-parity-plan.md` in that repo, is what went the other way. Read the
+plan before adding to batch, and keep its "Not yet on either side" list honest:
+building one of those here first is a divergence, not progress.
+
 It has **two halves, and they are not the same shape.** Colour (picking,
 history, palettes) is values and files; artwork is a composition and two
 renderers. The window has a sidebar because of that, not for decoration — and
@@ -28,7 +36,7 @@ tokens as CSS variables — will waste time here.
 make app     # build n.cover.app
 make dmg     # disk image, verified by mounting it
 make run     # build and launch
-make test    # the rule tests (129: 102 swift-testing, 27 XCTest)
+make test    # the rule tests (138: 111 swift-testing, 27 XCTest; one needs NCOVER_LIBRARY)
 ```
 
 ## The shape: a composition, not a pipeline
@@ -206,12 +214,46 @@ backend changes.
   the original Rust test names and expected pixel values. When this app diverges
   on purpose, **delete the test rather than weaken it** — a loosened assertion
   hides a regression, a deleted one records a decision.
-- **Overwrite replaces the original in place**, and is one toolbar button from
-  Save. `guardOverwrite` refuses anything but a PNG, because we save PNG and
-  overwriting a JPEG under its own name would silently re-encode it. Treat any
-  change near the write path as touching user data.
-- **Output is always PNG.** Not a preference — the disc / label mask needs an
-  alpha channel.
+- **Overwrite replaces the original in place, in its own format**, and is one
+  toolbar button from Save. A PNG stays a PNG; a JPEG stays a JPEG at quality
+  92. It used to refuse anything but a PNG, which was right while PNG was all
+  the write layer could encode — re-encoding a JPEG under its own name changes
+  the file's kind behind the user's back. `guardOverwrite` now carries the rule
+  that replaced it, which is about alpha, not extension. Treat any change near
+  the write path as touching user data: the target is usually a cover inside
+  someone's music library.
+- **A JPEG's dropped alpha is BLACK, not white, and nothing says so.**
+  `cgImage()` carries non-premultiplied alpha, ImageIO's JPEG encoder drops
+  that channel and keeps the RGB bytes, and `Raster.load` zeroes RGB wherever
+  alpha is 0. So writing a masked render as a JPEG stores its transparent
+  corners as black, with no error from any layer. This is the JPEG equivalent
+  of answering `hasVectorForm` dishonestly, and it is why `write(to:as:alpha:)`
+  makes the caller choose:
+  - `JPEGAlpha.refuse` — Overwrite. A transparent result is refused rather
+    than flattened onto a colour nobody chose.
+  - `JPEGAlpha.discard` — batch's keep-format jobs. A JPEG source had no alpha
+    to lose, so the channel is simply not written (`opaqueCGImage` re-reads the
+    fourth byte as padding: no copy, nothing composited, nothing invented).
+
+  Both are deliberate and the GTK sibling has the same split. Do not
+  "simplify" them into one policy, and do not give `alpha:` a permissive
+  default.
+- **`replaceFile` writes beside the original and renames over it.** An encoder
+  that fails midway through the target leaves a half-written cover in a music
+  library; a sibling temp plus `replaceItemAt` cannot. A test stages the
+  failure (a refused JPEG) and checks the original is byte-equal with no temp
+  left behind.
+- **Cover / Fit output is always PNG.** Not a preference — the disc / label
+  mask needs an alpha channel. Cap, Square and Pad (parity plan phase B) are
+  the exception: they tidy a file rather than frame one, so they keep its
+  format. Save offers PNG, and SVG where the document can; **JPEG is the write
+  path, not the save panel**, which is also true of the GTK app.
+- **`imageSize(of:)` reads the header, and that is a measured claim.** On this
+  Mac's library: 37 covers, 0.023 s from headers (0.63 ms each) against 1.526 s
+  decoding them, 65× — with every answer equal to the decode's. A survey that
+  decided "already square" or "within the cap" by decoding would be unusable at
+  library scale. The timing test is off unless `NCOVER_LIBRARY` names a real
+  folder, like the GTK side's ignored real-catalogue tests.
 
 ## Traps in the colour half
 

@@ -147,12 +147,35 @@ struct GuardTests {
                        output: URL(fileURLWithPath: "/tmp/out"))
     }
 
-    @Test func overwriteRefusesAnythingButPNG() {
-        #expect(throws: WriteGuardError.overwriteNotPNG("jpg")) {
-            try guardOverwrite(source: URL(fileURLWithPath: "/tmp/a/cover.jpg"))
-        }
+    // The GTK app's rule here MOVED (its 0.4.0): Overwrite keeps the file's
+    // own format and writes JPEG at quality 92, refusing a result with
+    // transparency. So this is not a divergence from the oracle — it is the
+    // oracle's current answer, and the old expectation ("anything but a PNG is
+    // refused") is gone rather than loosened.
+    @Test func overwriteKeepsTheFormatAndRefusesAlphaInAJPEG() {
+        // PNG: always fine, transparency and all. That is what it is for.
         #expect(throws: Never.self) {
-            try guardOverwrite(source: URL(fileURLWithPath: "/tmp/a/cover.PNG"))
+            try guardOverwrite(source: URL(fileURLWithPath: "/tmp/a/cover.PNG"),
+                               resultIsOpaque: false)
+        }
+        // JPEG: fine when the render is opaque.
+        #expect(throws: Never.self) {
+            try guardOverwrite(source: URL(fileURLWithPath: "/tmp/a/cover.jpg"),
+                               resultIsOpaque: true)
+        }
+        // JPEG with a transparent corner: refused, not flattened onto black.
+        #expect(throws: WriteGuardError.overwriteJPEGHasAlpha) {
+            try guardOverwrite(source: URL(fileURLWithPath: "/tmp/a/cover.jpeg"),
+                               resultIsOpaque: false)
+        }
+        // A format we do not write at all, named in the refusal.
+        #expect(throws: WriteGuardError.overwriteUnsupported("webp")) {
+            try guardOverwrite(source: URL(fileURLWithPath: "/tmp/a/cover.webp"),
+                               resultIsOpaque: true)
+        }
+        #expect(throws: WriteGuardError.overwriteUnsupported("(none)")) {
+            try guardOverwrite(source: URL(fileURLWithPath: "/tmp/a/cover"),
+                               resultIsOpaque: true)
         }
     }
 }

@@ -8,7 +8,30 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+The **Added** entries are the first phase of
+[`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the write layer the cover
+review loop needs. Nothing in the batch sheet has changed yet.
+
+### Added
+- **Overwrite keeps the file's own format.** A PNG stays a PNG, and a **JPEG
+  stays a JPEG** at quality 92 — the same number the GTK sibling writes, so a
+  cover tidied on either platform comes out the same. A result with
+  transparent areas is **refused** for a JPEG rather than flattened onto a
+  colour nobody chose: a JPEG has no alpha channel, and the bytes left behind
+  when that channel is dropped are black, not white, so the corners of a
+  masked cover would come back black with nothing reporting it. The button's
+  tooltip is now the refusal itself when it cannot go, and says what it will
+  write when it can.
+- Overwrite **writes beside the original and renames over it**, so an encode
+  that fails leaves the original whole. The target is usually a cover inside a
+  music library.
+- `imageSize(of:)` reads an image's pixel size from its **header**, without
+  decoding it: 37 covers in 0.023 s against 1.526 s to decode the same ones.
+  What a library-wide "is this already square" survey needs.
+
 ### Changed
+- Save is unchanged — PNG, and SVG where the document can. JPEG is the write
+  path, not the save panel.
 - `make install` now installs to **`/Applications`**, which is where a Mac
   keeps applications. It had defaulted to `~/Applications`, carried over from
   the Linux side of the suite. Override with `PREFIX=$HOME/Applications`.

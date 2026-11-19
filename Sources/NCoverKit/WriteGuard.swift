@@ -4,7 +4,10 @@ public enum WriteGuardError: LocalizedError, Equatable {
     case outputIsSource
     case outputInsideSource
     case sourceInsideOutput
-    case overwriteNotPNG(String)
+    /// A format we do not write at all.
+    case overwriteUnsupported(String)
+    /// A JPEG asked for, and the result is not opaque.
+    case overwriteJPEGHasAlpha
 
     public var errorDescription: String? {
         switch self {
@@ -14,8 +17,10 @@ public enum WriteGuardError: LocalizedError, Equatable {
             return "The output folder is inside the source folder. The next run would batch its own output."
         case .sourceInsideOutput:
             return "The source folder is inside the output folder. Choose an output folder beside it, not above it."
-        case .overwriteNotPNG(let ext):
-            return "Overwrite replaces a PNG in place. This source is .\(ext), and saving it as PNG under its own name would silently change the format."
+        case .overwriteUnsupported(let ext):
+            return "Overwrite keeps the file's own format, and this app does not write .\(ext) — it would have to become a PNG or a JPEG under a name that says otherwise."
+        case .overwriteJPEGHasAlpha:
+            return "This result has transparent areas and a JPEG has no alpha channel, so Overwrite would store them as black. Turn the disc off, put a background behind it, or save it as a new PNG."
         }
     }
 }
@@ -47,13 +52,29 @@ public func guardBatch(source: URL, output: URL) throws {
     }
 }
 
-/// Overwrite may only ever replace a PNG.
+/// Overwrite replaces a file in **its own format** — and only a format this
+/// app writes, with something that format can actually hold.
 ///
-/// We save PNG, so overwriting anything else would silently change the format —
-/// and for a JPEG, quietly re-encode it as PNG under the same name.
-public func guardOverwrite(source: URL) throws {
+/// It used to be PNG or nothing, which was right while PNG was all we wrote:
+/// re-encoding a JPEG as PNG under its own name changes the file's kind behind
+/// the user's back. Now that the write layer encodes both, the rule that
+/// matters is the alpha one. A JPEG has no alpha channel, and the bytes left
+/// behind when the channel is dropped are **black**, not white — so a masked
+/// render written over a JPEG cover would come back with black corners and no
+/// error. That is refused here rather than flattened onto a colour nobody
+/// chose. (Batch's keep-format jobs answer the same question with
+/// `JPEGAlpha.discard`, because a JPEG source has no transparency to lose;
+/// the two answers are deliberate and live at their own call sites.)
+///
+/// `resultIsOpaque` is the render that is about to be written, not the source.
+/// It is required rather than defaulted: a caller that has not looked is
+/// exactly the caller this guard exists for.
+public func guardOverwrite(source: URL, resultIsOpaque: Bool) throws {
     let ext = source.pathExtension.lowercased()
-    guard ext == "png" else { throw WriteGuardError.overwriteNotPNG(ext.isEmpty ? "(none)" : ext) }
+    guard let format = ImageFormat.of(source) else {
+        throw WriteGuardError.overwriteUnsupported(ext.isEmpty ? "(none)" : ext)
+    }
+    if format == .jpeg, !resultIsOpaque { throw WriteGuardError.overwriteJPEGHasAlpha }
 }
 
 /// What we will open. Anything else is simply not an image.

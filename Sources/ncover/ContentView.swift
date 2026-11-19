@@ -102,9 +102,8 @@ struct ContentView: View {
             }
             .labelStyle(.titleAndIcon)
             .disabled(!model.canOverwrite)
-            .help(model.canOverwrite
-                  ? "Replace the original PNG in place. This cannot be undone."
-                  : "Only a PNG can be overwritten — we save PNG, and rewriting a JPEG under its own name would silently change the format.")
+            .help(model.overwriteRefusal
+                  ?? "Replace the original in place as \(model.overwriteFormat ?? "it is"). This cannot be undone.")
         }
     }
 }
