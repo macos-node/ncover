@@ -518,6 +518,14 @@ final class AppModel: ObservableObject {
     /// never reaches a renderer.
     @Published private(set) var templateGhost: NSImage?
 
+    /// How many times Overwrite has written a file this session.
+    ///
+    /// Batch watches it: a cover squared by hand changes on disk, so the grid,
+    /// the counts and the Run button have to be re-read rather than keep
+    /// describing the file as it was. A count rather than a flag, so two
+    /// overwrites are two events.
+    @Published private(set) var overwriteCount = 0
+
     /// Whether the current render has any transparency. What a JPEG Overwrite
     /// turns on, kept beside the render rather than recomputed per read.
     @Published private(set) var renderIsOpaque = true
@@ -630,6 +638,7 @@ final class AppModel: ObservableObject {
             let out = lastRender ?? renderRaster(d)
             try guardOverwrite(source: url, resultIsOpaque: out.isOpaque)
             try out.replaceFile(at: url, as: format)
+            overwriteCount += 1
             error = nil
         } catch {
             self.error = error.localizedDescription

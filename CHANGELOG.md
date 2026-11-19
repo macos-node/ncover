@@ -8,12 +8,32 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
-Phases A, B and C of [`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the
+Phases A to D of [`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the
 write layer, the three jobs that tidy a library's covers rather than reframe
-them, and ndisc's Export list as a scope. Three of the four steps of the cover
-review loop now run in the two apps.
+them, ndisc's Export list as a scope, and a grid of every file a run would
+touch. Three of the four steps of the cover review loop now run in the two
+apps.
 
 ### Added
+- **Batch shows every file it would touch, as a grid**, with the same files
+  **numbered in a list** beside it — one selection, so the numbers agree and
+  picking in either moves the other. Under Cover and Fit it is every file, in
+  run order, as the run would write it; under Cap, Square and Pad it is only
+  the files the run would change, the largest (Cap) or least square (Square,
+  Pad) first. Each row says its change in words: "600 × 533 → 533 × 533 · 67
+  px off the sides (11%)". **Before** flips the grid to the files as they are
+  now, **Open folder** shows the selected cover in the Finder, and
+  double-clicking a cell or a row opens that file in the editor with the grid
+  as its browse list, so ← and → step through it in the grid's order.
+- Thumbnails render as cells appear, through the same renderer the run uses,
+  so a whole library scrolls without rendering itself up front.
+- **The grid is recounted when you come back to it**, so a cover squared by
+  hand in the editor drops off Square's list.
+
+### Removed
+- The four automatic samples and the twelve-thumbnail Preview, and the Preview
+  button with them. The grid is both of those done properly: always current,
+  and showing everything rather than the first few.
 - **From a list… — ndisc's Export list as a batch scope.** Point it at the
   file ndisc's *Local covers vs Blossom* writes (or any text file with one
   release folder per line) and the releases in it become the folders to walk.

@@ -246,6 +246,30 @@ export.
 
 Release as **0.9.0**.
 
+**Status (2026-11-20): done.** `planItems` / `PlanItem` in the Kit, the grid
+and the numbered Files list over one selection, per-cell lazy thumbnails with
+a generation check, Before, Open folder, double-click into the editor through
+`adoptBrowseList`, and the recount. The samples and the Preview sheet are
+gone. Three things came out differently from the plan:
+
+- **The runner had to move out of the sheet.** `BatchView` held it as a
+  `@StateObject`, and the route this phase builds — grid → editor → back —
+  closes the sheet, which threw away the scope, the list and the output folder
+  every time. `ContentView` owns it now, and the recount is
+  `AppModel.overwriteCount` in the `.task` id. That is this app's answer to
+  what GTK solved with a `written` cell and a Batch *page*; the page itself is
+  still phase E.
+- **`sizeChangeInWords` needed the job.** A pad followed by a cap ends up
+  smaller than it started, and from two sizes alone that reads as a crop. The
+  phase B signature was wrong and a phase D test is what found it.
+- **A vector is in a framing's plan and in no keep-format job's**, since it
+  has no pixel size to cap or square. It carries no "from" size and no
+  sentence rather than a guessed one.
+
+Not verified in a window: everything visual in it — how the grid fills while
+scrolling, whether the Files list is usable at a few hundred rows, and the
+double-click hand-off.
+
 ## Phase E: Overwrite from the editor, and the furniture
 
 - **Overwrite needs no build step** — framing alone is enough, so a cover the

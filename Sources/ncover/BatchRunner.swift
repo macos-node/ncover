@@ -84,7 +84,6 @@ final class BatchRunner: ObservableObject {
     /// out of 2,377 is only honest next to "left 2,132 alone".
     @Published private(set) var skipped = 0
     @Published private(set) var rows: [Row] = []
-    @Published private(set) var thumbs: [Thumb] = []
     @Published private(set) var stopped = false
     @Published var error: String?
 
@@ -106,23 +105,37 @@ final class BatchRunner: ObservableObject {
     /// A silent truncation reads as "that was everything".
     static let resultRows = 300
 
-    /// How many outputs the full preview renders. A contact sheet is a SAMPLE
-    /// you eyeball to catch "my recipe is wrong" before it touches 500 files.
-    static let previewCount = 12
 
-    /// How many render themselves, unasked, as soon as there is a recipe and
-    /// something to apply it to.
+
+    // MARK: - the plan: every file the run would touch
+
+    /// Every file this run would write, numbered and in review order. The
+    /// grid and the Files list are two views of this one array — that is why
+    /// their numbers agree and why selecting in either moves the other.
+    @Published private(set) var plan: [PlanItem] = []
+    @Published private(set) var planning = false
+    /// The selected row, shared by both views.
+    @Published var selected: String?
+    /// Show the files as they are now rather than as the run would write them.
+    @Published var showBefore = false
+
+    /// Bumped every time the plan is rebuilt. A thumbnail that finishes
+    /// rendering for an older plan is dropped rather than drawn: the recipe it
+    /// was rendered under is no longer the one on screen.
+    private var planGeneration = 0
+    /// Rendered thumbnails, by "generation|before|path".
+    @Published private(set) var thumbs: [String: NSImage] = [:]
+    private var inFlight = Set<String>()
+
+    /// How many thumbnails render at once.
     ///
-    /// Four rather than twelve because this runs on every change to the
-    /// recipe — and it runs at all because a preview you have to ask for is a
-    /// preview you can forget to ask for. A folder of covers came out as
-    /// discs that way, and the Run button cannot say "37 of them, as discs".
-    static let autoPreviewCount = 4
-
-    /// The always-on sample. Separate from `thumbs` so pressing Preview for
-    /// the full twelve does not fight the automatic four.
-    @Published private(set) var samples: [Thumb] = []
-    @Published private(set) var sampling = false
+    /// Not unbounded: a whole-library Cover scope is a couple of thousand
+    /// renders at the full canvas size, and the grid asks for every cell that
+    /// scrolls past. Four keeps the window responsive while filling visibly.
+    /// An SVG source has to go through the main actor anyway (WKWebView), so
+    /// those serialise regardless of this number.
+    private static let thumbWorkers = 4
+    private var rendering = 0
 
     var manifestPath: URL? { publishedManifestPath() }
 
@@ -228,40 +241,87 @@ final class BatchRunner: ObservableObject {
         changeCount = result.1
     }
 
-    /// Render the first few outputs, unasked.
+    /// Rebuild the plan: every file the run would write, in review order.
     ///
-    /// Through the same `renderOne` a run uses, so it is a sample of the real
-    /// thing rather than an impression of it. Cancellable, because it is
-    /// driven by controls somebody is still moving.
-    func refreshSamples() async {
+    /// Off the main actor and header-reads only, so it can exist for a whole
+    /// library and stay current while the recipe is being changed. The
+    /// generation it bumps is what makes a thumbnail from the previous recipe
+    /// drop rather than appear next to the new one.
+    func refreshPlan() async {
         guard blocker == nil, let scope = try? currentScope() else {
-            samples = []; return
+            plan = []; thumbs = [:]; return
         }
-        let hits = Array(findImages(in: scope, needle: needle).prefix(Self.autoPreviewCount))
-        guard !hits.isEmpty else { samples = []; return }
-        sampling = true
-        defer { sampling = false }
+        let needle = self.needle
         let r = recipe
-        var out: [Thumb] = []
-        for hit in hits {
-            if Task.isCancelled { return }
-            let label = relativePath(of: hit, under: scope.strip)
-            do {
-                // A sample of what the run does, and for a keep-format job
-                // that includes doing nothing: a file it would leave alone has
-                // no output to show, so it is not one of the samples.
-                guard let made = try await renderOne(hit, recipe: r) else { continue }
-                out.append(Thumb(label: label, image: made.nsImage(), error: nil))
-            } catch {
-                out.append(Thumb(label: label, image: nil, error: error.localizedDescription))
-            }
-        }
-        guard !Task.isCancelled else { return }
-        samples = out
+        planning = true
+        defer { planning = false }
+        let items = await Task.detached(priority: .userInitiated) {
+            planItems(files: findImages(in: scope, needle: needle), scope: scope, recipe: r)
+        }.value
+        guard needle == self.needle else { return }
+        planGeneration += 1
+        thumbs = [:]
+        inFlight = []
+        plan = items
+        if let sel = selected, !items.contains(where: { $0.id == sel }) { selected = nil }
     }
 
-    /// Everything a sample depends on, as one value — so no change can leave a
-    /// stale picture on screen next to the controls that no longer made it.
+    // MARK: - thumbnails
+
+    private func key(_ item: PlanItem, before: Bool) -> String {
+        "\(planGeneration)|\(before ? "before" : "after")|\(item.url.path)"
+    }
+
+    /// The selected row, as an item.
+    var selectedItem: PlanItem? { plan.first { $0.id == selected } }
+
+    /// Show this cover in the Finder, for replacing one by hand. One of the
+    /// two ways out of the grid — the other is the editor.
+    func revealInFinder(_ item: PlanItem) {
+        NSWorkspace.shared.activateFileViewerSelecting([item.url])
+    }
+
+    func thumb(_ item: PlanItem, before: Bool) -> NSImage? {
+        thumbs[key(item, before: before)]
+    }
+
+    /// Render one cell, if nothing else is already doing it.
+    ///
+    /// Called from each cell as it appears, so only what is on screen renders
+    /// — a plan is thousands of files and rendering it up front is not an
+    /// option. Through the run's own `renderOne`, so a cell is what the run
+    /// would write and not an impression of it.
+    func requestThumb(_ item: PlanItem, before: Bool) async {
+        let k = key(item, before: before)
+        guard thumbs[k] == nil, !inFlight.contains(k) else { return }
+        while rendering >= Self.thumbWorkers {
+            try? await Task.sleep(for: .milliseconds(40))
+            if Task.isCancelled { return }
+        }
+        guard thumbs[k] == nil, !inFlight.contains(k) else { return }
+        inFlight.insert(k)
+        rendering += 1
+        let generation = planGeneration
+        defer { rendering -= 1; inFlight.remove(k) }
+        let image: NSImage?
+        if before {
+            image = await Task.detached(priority: .utility) {
+                (try? Raster.load(contentsOf: item.url))?.nsImage()
+            }.value
+        } else {
+            image = try? await renderOne(item.url, recipe: recipe)?.nsImage()
+        }
+        // The recipe may have moved on while this rendered. Drawing it now
+        // would put the previous recipe's picture under the current one's
+        // label, which is worse than an empty cell.
+        guard generation == planGeneration, let image else { return }
+        thumbs[k] = image
+    }
+
+    /// Everything the survey and the plan depend on, as one value — so no
+    /// change can leave a stale count or a stale picture on screen beside the
+    /// controls that no longer made it. The job belongs here because under a
+    /// list scope the job picks the lines, so it is part of the scope itself.
     var sampleKey: String {
         [scope.rawValue, sourceFolder?.path ?? "", listPath?.path ?? "", needle,
          String(canvas), String(describing: job),
@@ -305,43 +365,6 @@ final class BatchRunner: ObservableObject {
         panel.canCreateDirectories = true
         panel.message = message
         return panel.runModal() == .OK ? panel.url : nil
-    }
-
-    // MARK: - preview
-
-    /// A contact sheet of the first few outputs. The same `batchRender` the run
-    /// uses, so what you are looking at is what would be written.
-    func preview() async {
-        guard blocker == nil else { error = blocker; return }
-        reset()
-        running = true
-        defer { running = false }
-        do {
-            let s = try currentScope()
-            let hits = findImages(in: s, needle: needle)
-            total = hits.count
-            let r = recipe
-            for hit in hits.prefix(Self.previewCount) {
-                if cancelled { break }
-                let label = relativePath(of: hit, under: s.strip)
-                do {
-                    if let out = try await renderOne(hit, recipe: r) {
-                        thumbs.append(Thumb(label: label, image: out.nsImage(), error: nil))
-                    } else {
-                        thumbs.append(Thumb(label: label, image: nil,
-                                            error: "left alone — \(r.job.name) would not change it"))
-                    }
-                } catch {
-                    // A preview must show the failures too, or it lies about
-                    // what the run will do.
-                    thumbs.append(Thumb(label: label, image: nil,
-                                        error: error.localizedDescription))
-                }
-                done += 1
-            }
-        } catch {
-            self.error = error.localizedDescription
-        }
     }
 
     // MARK: - the run
@@ -410,7 +433,7 @@ final class BatchRunner: ObservableObject {
     private func reset() {
         cancelled = false; stopped = false
         total = 0; done = 0; ok = 0; failed = 0; skipped = 0
-        rows = []; thumbs = []; error = nil
+        rows = []; error = nil
     }
 
 

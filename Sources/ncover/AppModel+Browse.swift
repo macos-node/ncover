@@ -57,6 +57,20 @@ extension AppModel {
         Task { await load(first, rescan: false) }
     }
 
+    /// Take a list of files as the browse list and open one of them.
+    ///
+    /// How a file leaves the batch grid for the editor: the grid's own files
+    /// become ← and →, in the grid's order, so stepping through what a run
+    /// would touch is the same gesture as stepping through a folder. Not
+    /// `scanFolder`, deliberately — the grid's list is a selection out of a
+    /// library and re-reading the folder would throw that away.
+    func adoptBrowseList(_ files: [URL], at url: URL) {
+        guard !files.isEmpty else { return }
+        folder = files
+        folderIndex = files.firstIndex(of: url) ?? 0
+        Task { await load(files[folderIndex], rescan: false) }
+    }
+
     /// Start from a blank white square rather than a file.
     ///
     /// White because a record label is white far more often than not, and

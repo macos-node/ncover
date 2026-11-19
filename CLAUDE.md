@@ -36,7 +36,7 @@ tokens as CSS variables — will waste time here.
 make app     # build n.cover.app
 make dmg     # disk image, verified by mounting it
 make run     # build and launch
-make test    # the rule tests (167: 140 swift-testing, 27 XCTest; two are opt-in)
+make test    # the rule tests (174: 147 swift-testing, 27 XCTest; two are opt-in)
 ```
 
 ## The shape: a composition, not a pipeline
@@ -429,13 +429,40 @@ backend changes.
   Throwing them away and showing folder paths would be a much worse answer to
   "what will this touch" — and the folder often does not match the record, as
   a compilation filed under Various Artists shows.
-- **The batch preview renders itself.** A preview you have to press is a
-  preview you can forget to press, and forgetting it is how a folder of
-  covers comes out as discs. Four samples render on every settled change to
-  the scope, the filter or the recipe, through the same `renderOne` a run
-  uses; the Preview button still does the full twelve. `sampleKey` gathers
-  every input into one value so no change can leave a stale picture beside
-  the controls that no longer made it.
+- **The grid replaced the four auto-samples and the twelve-thumbnail
+  preview**, and it replaced them because it is both of those done properly:
+  always current, every file rather than the first few, and under a
+  keep-format job **only the files the run would change** — so its length is
+  the Run button's count. `sampleKey` still gathers every input into one
+  value, and now drives the survey and the plan together, so no change can
+  leave a stale count or a stale picture beside the controls that no longer
+  made it. (The old rule it embodied still holds: a preview you have to press
+  is one you can forget to press, and forgetting it is how a folder of covers
+  comes out as discs.)
+- **The grid and the Files list are one array under one selection** (`plan`,
+  `selected`). That is why their numbers agree and why selecting in either
+  moves the other. Never give either view a list of its own.
+- **Thumbnails render lazily, per cell, through the run's own `renderOne`.**
+  A plan is thousands of files and a whole-library Cover scope is ~2,400
+  full-canvas renders, so nothing renders until a cell appears; the cell's
+  `.task` goes away with it when it scrolls off. At most `thumbWorkers` run at
+  once — an SVG serialises through the main actor regardless, because
+  WKWebView.
+- **A thumbnail carries the generation it was rendered under.** `planGeneration`
+  is bumped on every rebuild and a finished render is dropped if it no longer
+  matches: drawing it would put the *previous* recipe's picture under the
+  current one's label, which is worse than an empty cell.
+- **`sizeChangeInWords` takes the job rather than inferring from the two
+  sizes.** A padded image that is then capped comes out *smaller* than it went
+  in (1000 × 500 → padded to 1000² → capped to 400²), and a reader working
+  from the sizes alone calls that a crop — the opposite of what happened. A
+  test caught this; it is the kind of thing only a test catches.
+- **The runner outlives the sheet.** `ContentView` owns it, not `BatchView`,
+  because the intended route through the review loop *closes* the sheet: pick
+  a cover in the grid, fix it in the editor, come back. A `@StateObject` in
+  the sheet threw away the scope, the list and the output folder every time.
+  The recount on the way back in is `AppModel.overwriteCount` inside the
+  `.task` id — a count, not a flag, so two overwrites are two events.
 - **The disc is off by default in batch.** `Recipe` has said "the disc is an
   option, not the point — resizing a folder of covers is a job on its own"
   since the beginning, and the batch sheet defaulted it on, which is the one

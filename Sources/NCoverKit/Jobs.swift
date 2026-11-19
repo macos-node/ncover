@@ -245,25 +245,32 @@ public func jobRender(_ src: Raster, job: BatchJob, canvas: Int) -> Raster? {
 }
 
 /// How a file's size change reads in words: what the Files list says beside
-/// each row. The GTK sibling's wording, because the two lists describe the
-/// same jobs and a user may well have both open.
+/// each row.
+///
+/// **It takes the job rather than inferring from the two sizes**, and that is
+/// not fussiness. A padded image that is then shrunk to the cap comes out
+/// *smaller* than it went in — 1000 × 500 padded to 1000² and capped to 400²
+/// — and a reader working from the sizes alone calls that a crop. It is the
+/// opposite of a crop. The pixel figures describe what the job did to the
+/// source, in the source's own pixels; the arrow shows where it ended up.
 public func sizeChangeInWords(from: (width: Int, height: Int),
-                              to: (width: Int, height: Int)) -> String {
+                              to: (width: Int, height: Int),
+                              job: BatchJob) -> String {
     let head = "\(from.width) × \(from.height) → \(to.width) × \(to.height)"
-    // A crop: the long side lost pixels at both ends.
-    if to.width == to.height, from.width != from.height,
-       to.width <= min(from.width, from.height) {
-        let off = max(from.width, from.height) - max(to.width, to.height)
-        let pct = Int((Double(off) / Double(max(from.width, from.height)) * 100).rounded())
+    let long = max(from.width, from.height), short = min(from.width, from.height)
+    guard long != short else { return head }
+
+    switch job {
+    case .square:
+        let off = long - short
+        let pct = Int((Double(off) / Double(long) * 100).rounded())
         let side = from.width > from.height ? "the sides" : "top and bottom"
         return "\(head) · \(off) px off \(side) (\(pct)%)"
-    }
-    // A pad: the short side gained bars.
-    if to.width == to.height, from.width != from.height,
-       to.width >= max(from.width, from.height) {
-        let add = max(to.width, to.height) - min(from.width, from.height)
-        let side = from.width > from.height ? "top and bottom" : "the sides"
+    case .pad:
+        let add = long - short
+        let side = from.width > from.height ? "top and bottom" : "left and right"
         return "\(head) · \(add) px added \(side)"
+    case .cap, .frame:
+        return head
     }
-    return head
 }

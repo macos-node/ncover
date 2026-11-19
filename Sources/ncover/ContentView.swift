@@ -32,6 +32,10 @@ enum AppSection: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @State private var section: AppSection = .artwork
+    /// The batch runner outlives the sheet it is shown in: the review loop
+    /// goes out through the editor and back, and losing the scope each time
+    /// would make it unusable.
+    @StateObject private var batch = BatchRunner()
 
     var body: some View {
         NavigationSplitView {
@@ -56,7 +60,9 @@ struct ContentView: View {
         } message: { Text(model.error ?? "") }
         // A confirmation is not an error and does not get a dialog to dismiss.
         .overlay(alignment: .bottom) { NoteBanner() }
-        .sheet(isPresented: $model.showBatch) { BatchView().environmentObject(model) }
+        .sheet(isPresented: $model.showBatch) {
+            BatchView(run: batch).environmentObject(model)
+        }
         // Once the app is up, not in `init`: touching NSColorPanel.shared
         // creates the panel, and there is no reason to pay for that before
         // there is a window.

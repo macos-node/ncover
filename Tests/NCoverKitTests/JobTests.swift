@@ -254,12 +254,24 @@ struct JobTests {
     // MARK: - words
 
     @Test func thesizeChangeReadsAsWhatHappenedToTheFile() {
-        #expect(sizeChangeInWords(from: (600, 533), to: (533, 533))
+        #expect(sizeChangeInWords(from: (600, 533), to: (533, 533), job: .square)
                 == "600 × 533 → 533 × 533 · 67 px off the sides (11%)")
-        #expect(sizeChangeInWords(from: (600, 538), to: (600, 600))
+        #expect(sizeChangeInWords(from: (600, 538), to: (600, 600), job: .pad(.edge))
                 == "600 × 538 → 600 × 600 · 62 px added top and bottom")
-        #expect(sizeChangeInWords(from: (2048, 2048), to: (400, 400))
+        #expect(sizeChangeInWords(from: (2048, 2048), to: (400, 400), job: .cap)
                 == "2048 × 2048 → 400 × 400")
+        // The case that made this take the job: padded to 1000², then capped
+        // to 400². It ends up smaller than it started, and from the sizes
+        // alone that reads as a crop — which is the opposite of what happened.
+        #expect(sizeChangeInWords(from: (1000, 500), to: (400, 400), job: .pad(.edge))
+                == "1000 × 500 → 400 × 400 · 500 px added top and bottom")
+        #expect(sizeChangeInWords(from: (1000, 500), to: (400, 400), job: .square)
+                == "1000 × 500 → 400 × 400 · 500 px off the sides (50%)")
+        // A tall image loses its sides to a crop and gains them to a pad.
+        #expect(sizeChangeInWords(from: (500, 1000), to: (500, 500), job: .square)
+                == "500 × 1000 → 500 × 500 · 500 px off top and bottom (50%)")
+        #expect(sizeChangeInWords(from: (500, 1000), to: (1000, 1000), job: .pad(.white))
+                == "500 × 1000 → 1000 × 1000 · 500 px added left and right")
     }
 
     // MARK: - end to end, on real files
