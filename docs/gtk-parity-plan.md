@@ -287,6 +287,30 @@ double-click hand-off.
 
 Release as **1.0.0** if everything above is in.
 
+**Status (2026-11-20): done, with one deliberate refusal.**
+
+- **Overwrite needed no unblocking** — it never had a build-step gate here, so
+  framing alone was already enough. What it was missing was the *confirm*,
+  which the GTK app has and this one did not: it wrote immediately. That is
+  now an alert naming both sizes and the format, with Cancel in the cancel
+  role and Overwrite in the destructive one.
+- **Batch became a sidebar place and the Quick start a fifth one.** The
+  sidebar is this app's answer to GTK's header switch — re-decided in its own
+  terms, as the plan asked — and it is what the grid needed rather than a
+  tidy-up: the sheet closed on every trip to the editor.
+- **The monochrome accents were refused**, and the reasoning is in `CLAUDE.md`
+  under *Places*: GTK inverts a chosen segment to match its own theme, while a
+  macOS segmented control is tinted with the user's system accent colour.
+  Repainting it here would break parity with the sibling's *intent*. Overwrite
+  staying red survives, as the `destructive` role.
+- `ColorData` gained `tips`, `rail` and `inspector`, with `tips` taking the
+  sibling's key name and its default-true, and a test pinning that a file
+  written before these keys existed still loads.
+
+Not verified in a window: the whole phase. The confirm's wording, the Quick
+start at a small window size, and whether Batch reads as a place rather than a
+mode are all things to look at rather than reason about.
+
 ---
 
 ## Not yet on either side

@@ -35,10 +35,27 @@ public struct ColorData: Codable, Equatable, Sendable {
     /// The output canvas size, remembered. Anything not in `CANVAS_SIZES` is
     /// ignored on load.
     public var canvas: Int = CANVAS_DEFAULT
+    /// Open on the Help page at launch. **Defaults true**, so a fresh install
+    /// is onboarded rather than dropped into an empty canvas.
+    ///
+    /// The name is the GTK sibling's: its `AppData.tips` means the same thing
+    /// and started life the same way (a getting-started panel, before it
+    /// became a page). The two apps write their own files — `n.cover/data.json`
+    /// here, `ncover/data.json` there — but the *shape* is deliberately
+    /// shared, and a key that means one thing in one and another in the other
+    /// is how that stops being true.
+    public var tips: Bool = true
+    /// Whether the editor's side columns are showing. Remembered, because a
+    /// window that comes back narrower than you left it is a small annoyance
+    /// repeated every launch.
+    public var rail: Bool = false
+    public var inspector: Bool = true
 
     public init() {}
 
-    private enum K: String, CodingKey { case format, history, palettes, pinned, canvas }
+    private enum K: String, CodingKey {
+        case format, history, palettes, pinned, canvas, tips, rail, inspector
+    }
 
     /// Every field optional on the way in. The file is shared with another app
     /// and with older versions of this one; a missing key is normal, not an
@@ -50,6 +67,9 @@ public struct ColorData: Codable, Equatable, Sendable {
         palettes = try c.decodeIfPresent([Palette].self, forKey: .palettes) ?? []
         pinned = try c.decodeIfPresent([String].self, forKey: .pinned) ?? []
         canvas = saneCanvas(try c.decodeIfPresent(Int.self, forKey: .canvas) ?? CANVAS_DEFAULT)
+        tips = try c.decodeIfPresent(Bool.self, forKey: .tips) ?? true
+        rail = try c.decodeIfPresent(Bool.self, forKey: .rail) ?? false
+        inspector = try c.decodeIfPresent(Bool.self, forKey: .inspector) ?? true
     }
 }
 

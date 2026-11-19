@@ -75,7 +75,7 @@ struct NCoverApp: App {
                     .disabled(model.current == nil)
                 Button("Import Palette…") { model.importPalette() }
                 Divider()
-                Button("Batch…") { model.showBatch = true }
+                Button("Batch") { model.section = .batch }
                     .keyboardShortcut("b", modifiers: [.command, .shift])
             }
             CommandGroup(replacing: .saveItem) {

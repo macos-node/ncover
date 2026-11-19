@@ -8,13 +8,27 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
-Phases A to D of [`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the
+All five phases of [`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the
 write layer, the three jobs that tidy a library's covers rather than reframe
 them, ndisc's Export list as a scope, and a grid of every file a run would
 touch. Three of the four steps of the cover review loop now run in the two
 apps.
 
 ### Added
+- **Overwrite asks before it writes.** It is the one control that replaces a
+  file this app did not create — usually a cover inside a music library — and
+  it wrote immediately. The question says what it will write as well as what
+  it replaces: "This replaces the original (600 × 538) with the result as
+  shown (400 × 400, JPEG at quality 92). It cannot be undone."
+- **Batch is a place in the sidebar rather than a sheet**, which is what the
+  review grid needed: picking a cover, fixing it in the editor and coming back
+  closed the sheet every time, losing the scope, the list and the output
+  folder with it.
+- **A Quick start page**, and a fresh install opens on it — four cards for
+  Artwork, Batch, Colours and palettes, and Formats and limits, with a box to
+  stop it showing. It stays in the sidebar, so it can be read again.
+- **The editor's side columns hide**, both from one toolbar menu, and both are
+  remembered between launches.
 - **Batch shows every file it would touch, as a grid**, with the same files
   **numbered in a list** beside it — one selection, so the numbers agree and
   picking in either moves the other. Under Cover and Fit it is every file, in

@@ -302,3 +302,32 @@ final class QuantiseTests: XCTestCase {
         XCTAssertEqual(dominantColors(r, want: 2), [RGB(241, 17, 17)])
     }
 }
+
+final class SettingsTests: XCTestCase {
+    func testTheNewKeysRoundTripAndDefaultTheWayTheSiblingDoes() throws {
+        var d = ColorData()
+        // Defaults: onboard a fresh install, and show the inspector.
+        XCTAssertTrue(d.tips, "a fresh install opens on the Quick start")
+        XCTAssertTrue(d.inspector)
+        XCTAssertFalse(d.rail)
+
+        d.tips = false; d.rail = true; d.inspector = false
+        let back = try JSONDecoder().decode(ColorData.self, from: try JSONEncoder().encode(d))
+        XCTAssertFalse(back.tips)
+        XCTAssertTrue(back.rail)
+        XCTAssertFalse(back.inspector)
+    }
+
+    func testAFileWrittenBeforeTheseKeysExistedStillLoads() throws {
+        // The file is shared in shape with the GTK app and with older versions
+        // of this one, so a missing key is normal. `tips` must come back TRUE
+        // from a file that has never heard of it — the same default the
+        // sibling's `#[serde(default = "yes")]` gives.
+        let old = Data(#"{"format":"hex","history":[],"palettes":[],"canvas":400}"#.utf8)
+        let d = try JSONDecoder().decode(ColorData.self, from: old)
+        XCTAssertTrue(d.tips)
+        XCTAssertTrue(d.inspector)
+        XCTAssertFalse(d.rail)
+        XCTAssertEqual(d.canvas, 400)
+    }
+}

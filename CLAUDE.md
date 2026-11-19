@@ -36,7 +36,7 @@ tokens as CSS variables — will waste time here.
 make app     # build n.cover.app
 make dmg     # disk image, verified by mounting it
 make run     # build and launch
-make test    # the rule tests (174: 147 swift-testing, 27 XCTest; two are opt-in)
+make test    # the rule tests (176: 147 swift-testing, 29 XCTest; two are opt-in)
 ```
 
 ## The shape: a composition, not a pipeline
@@ -253,6 +253,46 @@ backend changes.
   decided "already square" or "within the cap" by decoding would be unusable at
   library scale. The timing test is off unless `NCOVER_LIBRARY` names a real
   folder, like the GTK side's ignored real-catalogue tests.
+
+## Places, and what was deliberately not ported
+
+- **Batch is a place in the sidebar, not a sheet**, and that was forced by
+  the review grid: the route the grid builds — pick a cover, fix it in the
+  editor, come back — closed the sheet every time, and a modal you keep
+  closing is not where a job you are working through belongs. The sidebar is
+  this app's own idiom for what GTK does with a header switch, so `AppSection`
+  gained `.batch` and `.help` rather than this app growing a page switcher of
+  its own.
+- **`AppModel.section` holds the current place**, not a `@State` in
+  `ContentView`, because Batch has to be able to send you to the editor.
+- **Overwrite asks.** It wrote immediately until phase E, which was wrong for
+  the one control that replaces a file this app did not create, usually inside
+  a music library. The question says what it will *write* — the original's
+  size, the result's size, and "JPEG at quality 92" — not only what it will
+  destroy. `Cancel` takes the cancel role so Esc and ⌘. are the safe way out,
+  and `destructive` is what makes the other button red **on the system's**
+  terms rather than a colour picked here.
+- **Both column toggles live in the toolbar, not in the inspector.** The rail
+  toggle used to sit inside the inspector, so hiding the inspector hid the
+  only way to get the rail back. Both are remembered (`ColorData.rail`,
+  `.inspector`).
+- **`ColorData.tips` is the GTK sibling's key name on purpose.** Its
+  `AppData.tips` means the same thing and began the same way — a
+  getting-started panel, before it became a page — and defaults TRUE there and
+  here. The two apps write their own files (`n.cover/data.json` versus
+  `ncover/data.json`), but the *shape* is deliberately shared, and a key that
+  means one thing in one app and something else in the other is how that stops
+  being true. A test pins the default coming back true from a file that has
+  never heard of the key.
+- **The monochrome accent treatment was NOT ported, deliberately.** GTK 0.4.0
+  inverts the chosen segment of a switch (light on dark) and makes its green
+  buttons light-on-dark, taking the colours from its theme. On macOS a
+  segmented control is tinted with the **system accent colour**, which the user
+  chooses in System Settings and every other app on their Mac honours.
+  Repainting it here would not be parity with the sibling's intent — which was
+  to match its own platform — it would be the opposite. The one place GTK
+  keeps colour is Overwrite staying red, and that is exactly what the
+  `destructive` button role does here.
 
 ## Traps in the colour half
 

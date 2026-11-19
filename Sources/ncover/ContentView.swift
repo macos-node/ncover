@@ -8,30 +8,33 @@ import SwiftUI
 /// you flick between, and a sidebar is the thing a Mac user already knows how
 /// to collapse (⌃⌘S) when they want the canvas to have the window.
 enum AppSection: String, CaseIterable, Identifiable {
-    case artwork, picker, palettes
+    case artwork, batch, picker, palettes, help
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .artwork:  return "Artwork"
+        case .batch:    return "Batch"
         case .picker:   return "Colour"
         case .palettes: return "Palettes"
+        case .help:     return "Quick start"
         }
     }
 
     var symbol: String {
         switch self {
         case .artwork:  return "square.on.circle"
+        case .batch:    return "square.stack.3d.down.right"
         case .picker:   return "eyedropper"
         case .palettes: return "swatchpalette"
+        case .help:     return "info.circle"
         }
     }
 }
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
-    @State private var section: AppSection = .artwork
     /// The batch runner outlives the sheet it is shown in: the review loop
     /// goes out through the editor and back, and losing the scope each time
     /// would make it unusable.
@@ -40,29 +43,45 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(AppSection.allCases, selection: Binding(
-                get: { section }, set: { section = $0 ?? .artwork }
+                get: { model.section }, set: { model.section = $0 ?? .artwork }
             )) { s in
                 Label(s.label, systemImage: s.symbol).tag(s)
             }
             .navigationSplitViewColumnWidth(min: 150, ideal: 170, max: 220)
         } detail: {
-            switch section {
+            switch model.section {
             case .artwork:  ArtworkView()
+            // Batch is a place, not a sheet. It was a sheet, and the review
+            // loop goes out through the editor and back — which closed it
+            // every time, and a modal you keep closing is not where a job
+            // you are working through belongs.
+            case .batch:    BatchView(run: batch)
             case .picker:   PickerView()
             case .palettes: PalettesView()
+            case .help:     HelpView()
             }
         }
-        .toolbar { toolbar(for: section) }
+        .toolbar { toolbar(for: model.section) }
         .alert("n.cover", isPresented: Binding(
             get: { model.error != nil }, set: { if !$0 { model.error = nil } }
         )) {
             Button("OK", role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
+        // Overwrite asks. Cancel takes the cancel role, so Esc and ⌘. both
+        // take the safe way out, and the destructive role is what makes the
+        // other button red on a Mac rather than a colour chosen here.
+        .alert("Overwrite \(model.pendingOverwrite?.url.lastPathComponent ?? "this file")?",
+               isPresented: Binding(get: { model.pendingOverwrite != nil },
+                                    set: { if !$0 { model.pendingOverwrite = nil } })) {
+            Button("Cancel", role: .cancel) { model.pendingOverwrite = nil }
+            Button("Overwrite", role: .destructive) { model.confirmOverwrite() }
+        } message: { Text(model.pendingOverwrite?.detail ?? "") }
         // A confirmation is not an error and does not get a dialog to dismiss.
         .overlay(alignment: .bottom) { NoteBanner() }
-        .sheet(isPresented: $model.showBatch) {
-            BatchView(run: batch).environmentObject(model)
-        }
+        // A fresh install opens on the Quick start, and stops doing so once
+        // the box is unticked. Defaults true: an empty canvas explains
+        // nothing about what the app is for.
+        .task { if model.data.tips { model.section = .help } }
         // Once the app is up, not in `init`: touching NSColorPanel.shared
         // creates the panel, and there is no reason to pay for that before
         // there is a window.
@@ -83,11 +102,25 @@ struct ContentView: View {
                 .disabled(!model.canRedo)
                 .help("Redo")
         }
+        // Both column toggles live out here, not inside the inspector: the
+        // rail toggle used to, and hiding the inspector then hid the only
+        // way to get the rail back.
+        if section == .artwork {
+            ToolbarItem {
+                Menu {
+                    Toggle("Inspector", isOn: $model.showInspector)
+                    Toggle("Source / result", isOn: $model.showRail)
+                } label: {
+                    Label("Columns", systemImage: "sidebar.right")
+                }
+                .help("Show or hide the editor's side columns. Remembered.")
+            }
+        }
         // The two write actions carry visible labels. They are the
         // consequential pair, one of them irreversibly so, and "you can
         // hover to find out what destroys your file" is not a design.
         ToolbarItem {
-            Button { model.showBatch = true } label: {
+            Button { model.section = .batch } label: {
                 Label("Batch", systemImage: "square.stack.3d.down.right")
             }
             .help("Run one recipe over a folder, or over every release ndisc has published. Never writes over your originals.")
@@ -147,7 +180,10 @@ struct ArtworkView: View {
                 CanvasView().frame(minWidth: 420)
                 if model.showRail { SourceResultRail() }
             }
-            Inspector().frame(width: 290)
+            // Hideable, and remembered: at a narrow window the canvas wants
+            // the room, and a window that comes back narrower than you left
+            // it is a small annoyance repeated every launch.
+            if model.showInspector { Inspector().frame(width: 290) }
         }
     }
 }

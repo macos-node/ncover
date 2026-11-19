@@ -1,8 +1,13 @@
 import NCoverKit
 import SwiftUI
 
-/// The batch sheet: a recipe, a scope, and two folders that may not be the
-/// same one.
+/// Batch: a recipe, a scope, and two folders that may not be the same one.
+///
+/// A place in the sidebar rather than a sheet. It was a sheet until the review
+/// grid arrived, and the route the grid builds — pick a cover, fix it in the
+/// editor, come back — closed it every time; a modal you keep closing is not
+/// where a job you are working through belongs. `ContentView` owns the runner
+/// for the same reason.
 ///
 /// Laid out so the dangerous field is impossible to miss. The guard is in the
 /// model and refuses regardless, but a refusal is a worse experience than a
@@ -17,7 +22,6 @@ struct BatchView: View {
     /// scope, the list and the output folder on the way out — so the runner
     /// outlives the sheet, and only the recount happens on the way back in.
     @ObservedObject var run: BatchRunner
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
@@ -147,7 +151,7 @@ struct BatchView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 620, idealWidth: 660, minHeight: 600, idealHeight: 760)
+        .frame(minWidth: 520)
         .alert("Batch", isPresented: Binding(
             get: { run.error != nil }, set: { if !$0 { run.error = nil } }
         )) {
@@ -263,7 +267,7 @@ struct BatchView: View {
     /// is the intended route for a cover a centre crop would be wrong for.
     private func openInEditor(_ item: PlanItem) {
         model.adoptBrowseList(run.plan.map(\.url), at: item.url)
-        dismiss()
+        model.section = .artwork
     }
 
     /// What the run would touch, before anything is rendered. Walking
@@ -415,7 +419,6 @@ struct BatchView: View {
             if run.running {
                 Button("Stop") { run.cancel() }
             } else {
-                Button("Close") { dismiss() }
                 Button(runLabel) { Task { await run.run() } }
                     .keyboardShortcut(.defaultAction)
                     .disabled(run.blocker != nil)

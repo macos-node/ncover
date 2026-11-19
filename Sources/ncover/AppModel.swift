@@ -143,10 +143,14 @@ final class AppModel: ObservableObject {
     /// A grid over the canvas, for judging a placement against thirds and
     /// centre. Preview only, like the backdrop.
     @Published var showGrid = false
-    /// The source-beside-result strip under the canvas.
-    @Published var showRail = false
-    /// Whether the batch sheet is up.
-    @Published var showBatch = false
+    /// The source-beside-result strip under the canvas. Remembered.
+    @Published var showRail = loadColorData().rail { didSet { touch { $0.rail = showRail } } }
+    /// The editor's right-hand column. Remembered.
+    @Published var showInspector = loadColorData().inspector {
+        didSet { touch { $0.inspector = showInspector } }
+    }
+    /// Which place the window is in.
+    @Published var section: AppSection = .artwork
 
     // MARK: - the folder the source came from
     //
@@ -518,6 +522,16 @@ final class AppModel: ObservableObject {
     /// never reaches a renderer.
     @Published private(set) var templateGhost: NSImage?
 
+    /// An Overwrite waiting to be confirmed.
+    @Published var pendingOverwrite: OverwriteRequest?
+
+    struct OverwriteRequest: Identifiable {
+        let id = UUID()
+        let url: URL
+        /// What it will write and what it will replace, in words.
+        let detail: String
+    }
+
     /// How many times Overwrite has written a file this session.
     ///
     /// Batch watches it: a cover squared by hand changes on disk, so the grid,
@@ -618,14 +632,44 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Replace the original in place, in **its own format**.
+    /// Ask before replacing the original.
     ///
-    /// A PNG stays a PNG; a JPEG stays a JPEG at quality 92, and a render with
-    /// transparent areas is refused rather than written as black — the guard
-    /// owns that rule. The file is written beside the original and renamed
-    /// over it, so a failed encode leaves the original whole: the target is
-    /// usually a cover inside a music library.
+    /// The one place this app writes over something it did not create, and
+    /// the target is usually a cover inside someone's music library — so it
+    /// asks, and the question says what it will write rather than only what
+    /// it will destroy. It used to write immediately; a visible label is the
+    /// right treatment for a destructive control and is not a substitute for
+    /// being asked.
     func overwrite() {
+        guard let d = doc, let url = sourceURL else { return }
+        do {
+            guard let format = ImageFormat.of(url) else {
+                throw WriteGuardError.overwriteUnsupported(
+                    url.pathExtension.isEmpty ? "(none)" : url.pathExtension.lowercased())
+            }
+            let out = lastRender ?? renderRaster(d)
+            try guardOverwrite(source: url, resultIsOpaque: out.isOpaque)
+            let kind = format == .png ? "PNG" : "JPEG at quality 92"
+            let was = "\(d.source.raster.width) × \(d.source.raster.height)"
+            let now = "\(out.width) × \(out.height), \(kind)"
+            pendingOverwrite = OverwriteRequest(
+                url: url,
+                detail: "This replaces the original (\(was)) with the result as shown "
+                    + "(\(now)). It cannot be undone.")
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Replace the original in place, in **its own format**, once asked.
+    ///
+    /// A PNG stays a PNG; a JPEG stays a JPEG at quality 92, and a render
+    /// with transparent areas is refused rather than written as black — the
+    /// guard owns that rule. The file is written beside the original and
+    /// renamed over it, so a failed encode leaves the original whole.
+    func confirmOverwrite() {
+        pendingOverwrite = nil
         guard let d = doc, let url = sourceURL else { return }
         do {
             guard let format = ImageFormat.of(url) else {
