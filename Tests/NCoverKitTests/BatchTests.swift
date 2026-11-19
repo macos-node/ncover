@@ -65,7 +65,7 @@ struct BatchTests {
         // since each file renders perfectly on its own.
         let out = URL(fileURLWithPath: "/tmp/out")
         let plan = planDests(rels: ["Autechre/Amber/cover.jpg", "Autechre/Amber/cover.png"],
-                             outRoot: out, disc: false)
+                             outRoot: out, job: .frame(.cover), disc: false)
         #expect(try plan[0].get().path == "/tmp/out/Autechre/Amber/cover-jpg.png")
         #expect(try plan[1].get().path == "/tmp/out/Autechre/Amber/cover-png.png")
     }
@@ -75,14 +75,14 @@ struct BatchTests {
         // collisions has to come out byte-for-byte as it did before.
         let out = URL(fileURLWithPath: "/tmp/out")
         let plan = planDests(rels: ["Autechre/Amber/cover.jpg", "Autechre/Tri Repetae/cover.jpg"],
-                             outRoot: out, disc: false)
+                             outRoot: out, job: .frame(.cover), disc: false)
         #expect(try plan[0].get().path == "/tmp/out/Autechre/Amber/cover.png")
         #expect(try plan[1].get().path == "/tmp/out/Autechre/Tri Repetae/cover.png")
     }
 
     @Test func theDiscSuffixSurvivesDisambiguation() throws {
         let out = URL(fileURLWithPath: "/tmp/out")
-        let plan = planDests(rels: ["a/cover.jpg", "a/cover.png"], outRoot: out, disc: true)
+        let plan = planDests(rels: ["a/cover.jpg", "a/cover.png"], outRoot: out, job: .frame(.cover), disc: true)
         #expect(try plan[0].get().path == "/tmp/out/a/cover-jpg-disc.png")
         #expect(try plan[1].get().path == "/tmp/out/a/cover-png-disc.png")
     }
@@ -93,7 +93,7 @@ struct BatchTests {
         // is refused by name rather than written over in silence.
         let out = URL(fileURLWithPath: "/tmp/out")
         let plan = planDests(rels: ["a/cover-jpg.png", "a/cover.jpg", "a/cover.png"],
-                             outRoot: out, disc: false)
+                             outRoot: out, job: .frame(.cover), disc: false)
         #expect(try plan[0].get().path == "/tmp/out/a/cover-jpg.png")
         #expect(plan[1] == .failure(.destinationTaken(first: "a/cover-jpg.png",
                                                       dest: "/tmp/out/a/cover-jpg.png")))
@@ -187,7 +187,9 @@ struct BatchTests {
             src.px[i] = 255; src.px[i + 3] = 255
         }
         let r = Recipe(canvas: 20, framing: .cover, disc: .alpha)
-        let out = try batchRender(src, recipe: r)
+        // A framing always produces something; only the keep-format jobs
+        // answer nil, and this test is about Cover.
+        let out = try #require(try batchRender(src, recipe: r))
         #expect(out.width == 20 && out.height == 20)
         #expect(out.sample(10, 10) == RGBA(255, 0, 0, 255), "inside the disc")
         #expect(out.sample(0, 0).a == 0, "the corner is masked away")
@@ -222,7 +224,9 @@ struct BatchTests {
             let dest = batchDest(rel: rel, outRoot: out, disc: true)
             try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
-            try batchRender(try Raster.load(contentsOf: hit), recipe: recipe).writePNG(to: dest)
+            let made = try #require(try batchRender(try Raster.load(contentsOf: hit),
+                                                    recipe: recipe))
+            try made.writePNG(to: dest)
         }
 
         let written = out.appendingPathComponent("Autechre/Amber/cover-disc.png")
@@ -254,13 +258,15 @@ struct BatchTests {
         #expect(hits.count == 2)
 
         let rels = hits.map { relativePath(of: $0, under: scope.strip) }
-        let plan = planDests(rels: rels, outRoot: out, disc: false)
+        let plan = planDests(rels: rels, outRoot: out, job: .frame(.cover), disc: false)
         let recipe = Recipe(canvas: 100, framing: .cover, disc: nil)
         for (hit, planned) in zip(hits, plan) {
             let dest = try planned.get()
             try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
-            try batchRender(try Raster.load(contentsOf: hit), recipe: recipe).writePNG(to: dest)
+            let made = try #require(try batchRender(try Raster.load(contentsOf: hit),
+                                                    recipe: recipe))
+            try made.writePNG(to: dest)
         }
 
         // Two files out for two files in, and each is still its own picture.

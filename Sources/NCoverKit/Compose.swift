@@ -17,14 +17,30 @@ public enum OuterFill: Equatable, Sendable {
 }
 
 public struct Recipe: Equatable, Sendable {
+    /// The square's side for a framing; the longest side allowed for Cap, and
+    /// for the shrink Square and Pad finish with.
     public var canvas: Int
-    public var framing: Framing
+    public var job: BatchJob
     /// `nil` = no disc: just the framed square. The disc is an option, not the
-    /// point — resizing a folder of covers is a job on its own.
+    /// point — resizing a folder of covers is a job on its own. A disc with a
+    /// keep-format job is refused rather than ignored (`jobRefusal`).
     public var disc: OuterFill?
 
+    public init(canvas: Int, job: BatchJob, disc: OuterFill?) {
+        self.canvas = canvas; self.job = job; self.disc = disc
+    }
+
+    /// A framing recipe, which is what Cover and Fit are.
     public init(canvas: Int, framing: Framing, disc: OuterFill?) {
-        self.canvas = canvas; self.framing = framing; self.disc = disc
+        self.init(canvas: canvas, job: .frame(framing), disc: disc)
+    }
+
+    /// The framing, when this recipe is one. `nil` for a keep-format job,
+    /// which has no placement and no canvas to place onto — returning a
+    /// default would make `render` silently do the wrong thing for it.
+    public var framing: Framing? {
+        if case .frame(let f) = job { return f }
+        return nil
     }
 }
 
@@ -114,18 +130,45 @@ private func spans(count: Int, offset: Double, inv: Double, limit: Int) -> [Span
 }
 
 func composeAreaAveraged(_ src: Raster, _ p: Placement, canvas: Int) -> Raster {
-    var dst = Raster(empty: canvas, height: canvas)
     let inv = 1.0 / p.scale
-    let xs = spans(count: canvas, offset: p.dx, inv: inv, limit: src.width)
-    let ys = spans(count: canvas, offset: p.dy, inv: inv, limit: src.height)
+    return areaAverage(src,
+                       xs: spans(count: canvas, offset: p.dx, inv: inv, limit: src.width),
+                       ys: spans(count: canvas, offset: p.dy, inv: inv, limit: src.height),
+                       width: canvas, height: canvas)
+}
+
+/// Resize a whole image to `width` × `height` by the same box filter, with no
+/// placement and no canvas.
+///
+/// What the keep-format jobs shrink with: they tidy a file rather than frame
+/// one, so there is nothing to place and the result is not square. Each axis
+/// gets its own ratio, which is why Cap and Square can hand it a rectangle.
+/// Identical arithmetic to the shrinking half of `compose` — one accumulator,
+/// so a fix to the fringing rules cannot reach one path and miss the other.
+public func areaResample(_ src: Raster, width: Int, height: Int) -> Raster {
+    guard src.width > 0, src.height > 0, width > 0, height > 0 else {
+        return Raster(empty: max(width, 1), height: max(height, 1))
+    }
+    return areaAverage(src,
+                       xs: spans(count: width, offset: 0,
+                                 inv: Double(src.width) / Double(width), limit: src.width),
+                       ys: spans(count: height, offset: 0,
+                                 inv: Double(src.height) / Double(height), limit: src.height),
+                       width: width, height: height)
+}
+
+private func areaAverage(_ src: Raster, xs: [Span], ys: [Span],
+                         width: Int, height: Int) -> Raster {
+    var dst = Raster(empty: width, height: height)
+    let canvas = width
     let stride = src.width * 4
 
     src.px.withUnsafeBufferPointer { sp in
         dst.px.withUnsafeMutableBufferPointer { dp in
-            for y in 0..<canvas {
+            for y in 0..<height {
                 let ys_ = ys[y]
                 if ys_.weights.isEmpty { continue }
-                for x in 0..<canvas {
+                for x in 0..<width {
                     let xs_ = xs[x]
                     if xs_.weights.isEmpty { continue }
 
@@ -327,8 +370,15 @@ public func discTemplate(_ src: Raster, fill: OuterFill) -> Raster? {
 }
 
 /// The whole v1 pipeline: frame the source, then optionally disc it.
+/// Frame a source onto the square canvas: Cover or Fit, with an optional disc.
+///
+/// A keep-format job does not come through here — it has no placement — and
+/// asking for one with `Recipe.job == .cap` would quietly frame the file
+/// instead of tidying it. `batchRender` routes to the right family;
+/// `preconditionFailure` here would be the louder choice, but a batch must not
+/// take the app down over one file, so Cover is the stated fallback.
 public func render(_ src: Raster, recipe r: Recipe, placement: Placement? = nil) -> Raster {
-    let p = placement ?? (r.framing == .cover
+    let p = placement ?? ((r.framing ?? .cover) == .cover
         ? Placement.cover(sw: src.width, sh: src.height, canvas: r.canvas)
         : Placement.fit(sw: src.width, sh: src.height, canvas: r.canvas))
     let framed = compose(src, p, canvas: r.canvas)

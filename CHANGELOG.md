@@ -8,11 +8,32 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
-The **Added** entries are the first phase of
-[`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the write layer the cover
-review loop needs. Nothing in the batch sheet has changed yet.
+Phases A and B of [`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the
+write layer, and the three jobs that tidy a library's covers rather than
+reframe them.
 
 ### Added
+- **Cap, Square and Pad** — three batch jobs that are not framings. They keep
+  each file's name and format (a JPEG stays a JPEG at quality 92) and **write
+  nothing at all for a file they would not change**, which is what makes a run
+  over a whole library something you can review. **Cap** shrinks only images
+  whose longer side is over the size, keeping their shape. **Square** crops a
+  non-square image to the centre of its shorter side. **Pad** squares it the
+  other way, filling the bars with the **edge colour** — each bar the average
+  of the image edge beside it, transparency included, so a transparent logo
+  gets transparent bars — or white, black, or your picked colour. Square and
+  Pad leave an already-square image alone however large it is: squaring is
+  what they do, and capping is Cap's job.
+- The Run button counts what will actually be written: **"Run (245 of 2,377 to
+  shrink)"**, decided from the same arithmetic the run itself uses, and read
+  from each file's header rather than by decoding it. The survey line says the
+  same thing in words, and the results list has a third outcome — **left
+  alone** — because reporting an untouched file as written or failed would
+  both be wrong.
+- A disc and a keep-format job are **refused together**, with the reason: the
+  file is a JPEG as often as not, and a JPEG has nowhere to put a disc's
+  transparent corners. WebP and GIF are refused by name rather than quietly
+  turned into PNGs.
 - **Overwrite keeps the file's own format.** A PNG stays a PNG, and a **JPEG
   stays a JPEG** at quality 92 — the same number the GTK sibling writes, so a
   cover tidied on either platform comes out the same. A result with

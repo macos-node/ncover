@@ -31,7 +31,11 @@ final class BatchRunner: ObservableObject {
         /// `Result<String, String>`, which Swift will not have: the failure
         /// type has to be an `Error`, and a sentence meant for a person is not
         /// one.
-        enum Outcome { case wrote(String), failed(String) }
+        /// `skipped` is the keep-format jobs' third answer: the file is
+        /// already square, or already within the cap, so the run writes
+        /// nothing for it. Reporting that as `wrote` or `failed` would both
+        /// be lies.
+        enum Outcome { case wrote(String), failed(String), skipped(String) }
         let outcome: Outcome
     }
 
@@ -48,7 +52,10 @@ final class BatchRunner: ObservableObject {
     @Published var outputFolder: URL?
     @Published var needle = ""
     @Published var canvas = CANVAS_DEFAULT
-    @Published var framing: Framing = .cover
+    @Published var job: BatchJob = .frame(.cover)
+    /// What fills Pad's bars. Kept beside the job so switching away and back
+    /// does not lose the choice.
+    @Published var padFill: PadFill = .edge
     /// Off by default, and the Recipe type next door says why: "the disc is an
     /// option, not the point — resizing a folder of covers is a job on its
     /// own". Defaulting it on contradicted that in the one place it mattered,
@@ -64,6 +71,9 @@ final class BatchRunner: ObservableObject {
     @Published private(set) var done = 0
     @Published private(set) var ok = 0
     @Published private(set) var failed = 0
+    /// Files a keep-format job left alone. Counted, not hidden: "wrote 245"
+    /// out of 2,377 is only honest next to "left 2,132 alone".
+    @Published private(set) var skipped = 0
     @Published private(set) var rows: [Row] = []
     @Published private(set) var thumbs: [Thumb] = []
     @Published private(set) var stopped = false
@@ -72,6 +82,12 @@ final class BatchRunner: ObservableObject {
     /// What the current scope and filter select, kept current while you type.
     /// `nil` until the first survey lands; the walk is cheap but not free.
     @Published private(set) var survey: BatchSurvey?
+
+    /// How many of those files a keep-format job would actually rewrite.
+    /// `nil` for a framing, which reframes every one of them, and before the
+    /// first survey. Read from each file's header, which is why counting a
+    /// couple of thousand of them is a second rather than a minute.
+    @Published private(set) var changeCount: Int?
     @Published private(set) var surveying = false
 
     private var cancelled = false
@@ -102,8 +118,14 @@ final class BatchRunner: ObservableObject {
     var manifestPath: URL? { publishedManifestPath() }
 
     var recipe: Recipe {
-        Recipe(canvas: canvas, framing: framing, disc: discOn ? outerFill : nil)
+        var j = job
+        if case .pad = j { j = .pad(padFill) }
+        return Recipe(canvas: canvas, job: j, disc: discOn ? outerFill : nil)
     }
+
+    /// Why this job and this disc cannot run together. The UI shows it and
+    /// `blocker` refuses on it, so the two cannot disagree.
+    var jobDiscRefusal: String? { jobRefusal(job: job, disc: discOn) }
 
     private var outerFill: OuterFill {
         switch fill {
@@ -122,6 +144,7 @@ final class BatchRunner: ObservableObject {
     /// disagree.
     var blocker: String? {
         if running { return "A run is in progress." }
+        if let r = jobDiscRefusal { return r }
         switch scope {
         case .folder:
             if sourceFolder == nil { return "Choose a source folder." }
@@ -158,16 +181,27 @@ final class BatchRunner: ObservableObject {
     /// but a library of a few thousand releases is still a few thousand
     /// `contentsOfDirectory` calls and the filter field has to stay typeable.
     func refreshSurvey() async {
-        guard let scope = try? currentScope() else { survey = nil; return }
+        guard let scope = try? currentScope() else { survey = nil; changeCount = nil; return }
         let needle = self.needle
+        let job = recipe.job
+        let cap = canvas
         surveying = true
         defer { surveying = false }
         let result = await Task.detached(priority: .userInitiated) {
-            surveyBatch(scope, needle: needle)
+            // The change count is taken over the RUN's own file list, so "245
+            // of 2,377" cannot be a count of something else. Header reads
+            // only: nothing is decoded here either.
+            let survey = surveyBatch(scope, needle: needle)
+            let changes: Int? = job.keepsFile
+                ? findImages(in: scope, needle: needle)
+                    .filter { wouldChange($0, job: job, canvas: cap) }.count
+                : nil
+            return (survey, changes)
         }.value
         // The filter may have moved on while we walked; the last word wins.
         guard needle == self.needle else { return }
-        survey = result
+        survey = result.0
+        changeCount = result.1
     }
 
     /// Render the first few outputs, unasked.
@@ -189,8 +223,11 @@ final class BatchRunner: ObservableObject {
             if Task.isCancelled { return }
             let label = relativePath(of: hit, under: scope.strip)
             do {
-                out.append(Thumb(label: label, image: try await renderOne(hit, recipe: r).nsImage(),
-                                 error: nil))
+                // A sample of what the run does, and for a keep-format job
+                // that includes doing nothing: a file it would leave alone has
+                // no output to show, so it is not one of the samples.
+                guard let made = try await renderOne(hit, recipe: r) else { continue }
+                out.append(Thumb(label: label, image: made.nsImage(), error: nil))
             } catch {
                 out.append(Thumb(label: label, image: nil, error: error.localizedDescription))
             }
@@ -202,8 +239,9 @@ final class BatchRunner: ObservableObject {
     /// Everything a sample depends on, as one value — so no change can leave a
     /// stale picture on screen next to the controls that no longer made it.
     var sampleKey: String {
-        [scope.rawValue, sourceFolder?.path ?? "", needle, String(canvas), framing.rawValue,
-         discOn ? "disc" : "plain", fill.rawValue, fillColour.rgb.hex].joined(separator: "|")
+        [scope.rawValue, sourceFolder?.path ?? "", needle, String(canvas), String(describing: job),
+         String(describing: padFill), discOn ? "disc" : "plain", fill.rawValue,
+         fillColour.rgb.hex].joined(separator: "|")
     }
 
     // MARK: - choosing folders
@@ -245,8 +283,12 @@ final class BatchRunner: ObservableObject {
                 if cancelled { break }
                 let label = relativePath(of: hit, under: s.strip)
                 do {
-                    let out = try await renderOne(hit, recipe: r)
-                    thumbs.append(Thumb(label: label, image: out.nsImage(), error: nil))
+                    if let out = try await renderOne(hit, recipe: r) {
+                        thumbs.append(Thumb(label: label, image: out.nsImage(), error: nil))
+                    } else {
+                        thumbs.append(Thumb(label: label, image: nil,
+                                            error: "left alone — \(r.job.name) would not change it"))
+                    }
                 } catch {
                     // A preview must show the failures too, or it lies about
                     // what the run will do.
@@ -280,18 +322,31 @@ final class BatchRunner: ObservableObject {
             // release would otherwise plan the same output and the second
             // would replace the first, both reported as written.
             let rels = hits.map { relativePath(of: $0, under: s.strip) }
-            let plan = planDests(rels: rels, outRoot: out, disc: r.disc != nil)
+            let plan = planDests(rels: rels, outRoot: out, job: r.job, disc: r.disc != nil)
 
             for ((hit, rel), planned) in zip(zip(hits, rels), plan) {
                 if cancelled { break }
                 do {
                     let dest = try planned.get()
-                    let rendered = try await renderOne(hit, recipe: r)
+                    // The format is settled before the render, so a file this
+                    // app cannot write is reported as left-as-it-is rather
+                    // than decoded and then refused.
+                    let format = try batchWriteFormat(dest: dest, job: r.job)
+                    guard let rendered = try await renderOne(hit, recipe: r) else {
+                        skipped += 1
+                        record(Row(rel: rel,
+                                   outcome: .skipped("\(r.job.name) would not change it")))
+                        done += 1
+                        continue
+                    }
                     if !dry {
                         try FileManager.default.createDirectory(
                             at: dest.deletingLastPathComponent(),
                             withIntermediateDirectories: true)
-                        try rendered.writePNG(to: dest)
+                        // A keep-format job carries a JPEG's own RGB through,
+                        // so there is no alpha to lose and nothing to refuse;
+                        // the framings write PNG and keep theirs.
+                        try rendered.write(to: dest, as: format, alpha: .discard)
                     }
                     ok += 1
                     record(Row(rel: rel, outcome: .wrote(dest.path)))
@@ -312,7 +367,7 @@ final class BatchRunner: ObservableObject {
 
     private func reset() {
         cancelled = false; stopped = false
-        total = 0; done = 0; ok = 0; failed = 0
+        total = 0; done = 0; ok = 0; failed = 0; skipped = 0
         rows = []; thumbs = []; error = nil
     }
 
@@ -324,7 +379,8 @@ final class BatchRunner: ObservableObject {
 
     /// Decode one file and render it. SVG goes through WebKit and is therefore
     /// awaited; everything else is a straight decode.
-    private func renderOne(_ url: URL, recipe r: Recipe) async throws -> Raster {
+    /// `nil` = the keep-format job would leave this file alone.
+    private func renderOne(_ url: URL, recipe r: Recipe) async throws -> Raster? {
         let src: Raster
         if url.pathExtension.lowercased() == "svg" {
             // Rasterised comfortably above any canvas we offer, so scaling
@@ -337,12 +393,24 @@ final class BatchRunner: ObservableObject {
     }
 
     /// What the buttons should say they are about to do.
-    var actionCount: Int? { survey?.total }
+    /// What the Run button promises: the number of someone's files this run
+    /// will write. For a keep-format job that is not the number it looked at.
+    var actionCount: Int? { recipe.job.keepsFile ? changeCount : survey?.total }
+
+    /// "to shrink", "to square" — what the button's count is a count of.
+    var actionVerb: String? {
+        switch recipe.job {
+        case .frame:            return nil
+        case .cap:              return "to shrink"
+        case .square, .pad:     return "to square"
+        }
+    }
 
     var summary: String {
         if running { return "\(done) of \(total)…" }
         if total == 0 { return "" }
         var s = "\(ok) \(dryRun ? "would be written" : "written")"
+        if skipped > 0 { s += ", \(skipped) left alone" }
         if failed > 0 { s += ", \(failed) failed" }
         if stopped { s += " — stopped" }
         if rows.count >= Self.resultRows {

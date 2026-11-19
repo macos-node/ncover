@@ -36,7 +36,7 @@ tokens as CSS variables — will waste time here.
 make app     # build n.cover.app
 make dmg     # disk image, verified by mounting it
 make run     # build and launch
-make test    # the rule tests (138: 111 swift-testing, 27 XCTest; one needs NCOVER_LIBRARY)
+make test    # the rule tests (156: 129 swift-testing, 27 XCTest; one needs NCOVER_LIBRARY)
 ```
 
 ## The shape: a composition, not a pipeline
@@ -244,9 +244,8 @@ backend changes.
   failure (a refused JPEG) and checks the original is byte-equal with no temp
   left behind.
 - **Cover / Fit output is always PNG.** Not a preference — the disc / label
-  mask needs an alpha channel. Cap, Square and Pad (parity plan phase B) are
-  the exception: they tidy a file rather than frame one, so they keep its
-  format. Save offers PNG, and SVG where the document can; **JPEG is the write
+  mask needs an alpha channel. Cap, Square and Pad are the exception: they
+  tidy a file rather than frame one, so they keep its format. Save offers PNG, and SVG where the document can; **JPEG is the write
   path, not the save panel**, which is also true of the GTK app.
 - **`imageSize(of:)` reads the header, and that is a measured claim.** On this
   Mac's library: 37 covers, 0.023 s from headers (0.63 ms each) against 1.526 s
@@ -446,6 +445,49 @@ backend changes.
   files that would fail is a preview that lies about what the run will do.
 - **Each result row carries its reason.** "31 failed" is unactionable and
   sends you guessing at the tool from the outside.
+- **The keep-format jobs are not framings, and must not become `Framing`
+  cases.** Here `Framing` is the *editor's* placement intent — `resetFraming()`
+  turns it into a `Placement` — and the canvas picker and the batch picker read
+  the same type, so a `Framing.cap` would appear in the editor's control. The
+  GTK sibling has no such sharing, which is why `Framing::Cap` is right there
+  and wrong here. `BatchJob` is the batch-only type: `.frame(Framing)` for
+  Cover and Fit, then `.cap`, `.square`, `.pad(PadFill)`, with `keepsFile` as
+  the predicate the planner and the write path read.
+- **A keep-format job must write nothing for a file it would not change.**
+  That is the property that makes a run over a whole library reviewable rather
+  than a leap, and it is also what keeps a JPEG from being re-encoded for no
+  reason. `jobRender` answers `nil`, `batchRender` passes it on, and the runner
+  reports `Outcome.skipped`. **Treating that `nil` as a failure would be
+  reporting a lie** — nothing went wrong, nothing happened.
+- **One arithmetic decides "would this change", and both callers ask it.**
+  `jobResultSize` is asked by the survey (through `wouldChange`, from a header
+  read) and by the render (from the decoded pixels). "Run (245 of 2,377 to
+  shrink)" is a promise about how many of someone's files are about to be
+  rewritten; two code paths answering it separately is how it stops being one.
+  A test writes real files and checks the two answers agree per file.
+- **Square and Pad leave an already-square image alone, however large.**
+  Squaring is what they do; capping is Cap's job. This looks like an omission
+  and is not: a Square run over a library of 2,000 square covers must write
+  nothing at all.
+- **A disc and a keep-format job are refused together** (`jobRefusal`), not
+  silently reconciled. The file is a JPEG as often as not, and a JPEG has
+  nowhere to put a disc's transparent corners. The toggle is disabled and
+  `blocker` refuses, from the same function, so the two cannot disagree.
+- **`planDests`' disambiguation is for the PNG family only.** A keep-format
+  job's outputs are its sources' own names, so `cover.jpg` and `cover.png` in
+  one release are already distinct — the clash that `planDests` exists for
+  cannot arise there. The clash *check* still runs over both: it costs a
+  dictionary, and it is what would notice if that reasoning ever stopped being
+  true.
+- **`areaResample` and `compose`'s downscale share one accumulator**
+  (`areaAverage`). The premultiplied average and the divide-by-the-whole-box
+  rule are subtle enough that a second copy would drift; a keep-format job
+  shrinks a rectangle to a rectangle, which is the same filter with its own
+  per-axis ratio and no placement.
+- **Pad's edge fill averages in premultiplied space and keeps the mean
+  alpha**, which is what gives a transparent logo transparent bars rather than
+  grey ones. Each bar reads the row or column it sits against, so the two can
+  differ — a sky at the top and a floor at the bottom.
 - **ndisc's manifest is at `~/.local/share/ndisc-suite/published.json` on
   macOS too**, not Application Support. That is ndisc's own decision, made so
   every app in the suite resolves it identically; this app follows it rather

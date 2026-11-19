@@ -68,13 +68,30 @@ struct BatchView: View {
                     Picker("Canvas", selection: $run.canvas) {
                         ForEach(CANVAS_SIZES, id: \.self) { Text("\($0) px").tag($0) }
                     }
-                    Picker("Framing", selection: $run.framing) {
-                        Text("Cover").tag(Framing.cover)
-                        Text("Fit").tag(Framing.fit)
+                    Picker("Job", selection: $run.job) {
+                        Text("Cover").tag(BatchJob.frame(.cover))
+                        Text("Fit").tag(BatchJob.frame(.fit))
+                        Text("Cap").tag(BatchJob.cap)
+                        Text("Square").tag(BatchJob.square)
+                        Text("Pad").tag(BatchJob.pad(.edge))
                     }
                     .pickerStyle(.segmented)
+                    .tip("Cover and Fit write a new square PNG. Cap, Square and Pad tidy each file in place — same name, same format — and write nothing at all for a file they would not change.")
+                    if case .pad = run.job {
+                        Picker("Bars", selection: $run.padFill) {
+                            Text("Edge").tag(PadFill.edge)
+                            Text("White").tag(PadFill.white)
+                            Text("Black").tag(PadFill.black)
+                            Text("Colour").tag(PadFill.solid(run.fillColour.rgb))
+                        }
+                        .pickerStyle(.segmented)
+                        .tip("Edge takes each bar from the average of the image edge beside it, transparency included — so a transparent logo gets transparent bars.")
+                    }
                     Toggle("Disc mask", isOn: $run.discOn)
-                        .tip("The disc is an option, not the point — resizing a folder of covers is a job on its own.")
+                        .disabled(run.job.keepsFile)
+                        .tip(run.job.keepsFile
+                             ? "\(run.job.name) keeps each file's own format, which has no room for a disc's transparent corners."
+                             : "The disc is an option, not the point — resizing a folder of covers is a job on its own.")
                     if run.discOn {
                         Picker("Corners", selection: $run.fill) {
                             Text("Transparent").tag(AppModel.FillKind.alpha)
@@ -87,8 +104,13 @@ struct BatchView: View {
                                         help: "What fills outside the mask in every output.")
                         }
                     }
-                    Text("Every output is a PNG. Not a preference — the disc mask needs an alpha channel.")
+                    Text(run.job.keepsFile
+                         ? "\(run.job.name) keeps each file's name and format — a JPEG stays a JPEG at quality 92 — and leaves a file it would not change untouched."
+                         : "Every output is a PNG. Not a preference — the disc mask needs an alpha channel.")
                         .font(.caption).foregroundStyle(.tertiary)
+                    if let refusal = run.jobDiscRefusal {
+                        Text(refusal).font(.caption).foregroundStyle(.orange)
+                    }
                 }
 
                 scopeSurvey
@@ -212,6 +234,9 @@ struct BatchView: View {
         if s.emptyRoots > 0 {
             out += " · \(s.emptyRoots) \(what)\(s.emptyRoots == 1 ? "" : "s") matched nothing"
         }
+        if let n = run.changeCount, let verb = run.actionVerb {
+            out += " · \(n) \(verb), \(s.total - n) already as they should be"
+        }
         return out
     }
 
@@ -256,11 +281,19 @@ struct BatchView: View {
                         Image(systemName: "checkmark").foregroundStyle(.secondary)
                     case .failed:
                         Image(systemName: "xmark").foregroundStyle(.orange)
+                    case .skipped:
+                        // Not a tick and not a cross: nothing happened to this
+                        // file, which is a third thing and reads as one.
+                        Image(systemName: "minus").foregroundStyle(.tertiary)
                     }
                     Text(row.rel).lineLimit(1).truncationMode(.head)
                     Spacer()
                     if case .failed(let why) = row.outcome {
                         Text(why).font(.caption).foregroundStyle(.orange)
+                            .lineLimit(1).truncationMode(.tail)
+                    }
+                    if case .skipped(let why) = row.outcome {
+                        Text(why).font(.caption).foregroundStyle(.tertiary)
                             .lineLimit(1).truncationMode(.tail)
                     }
                 }
@@ -274,6 +307,12 @@ struct BatchView: View {
     private var runLabel: String {
         let verb = run.dryRun ? "Dry run" : "Run"
         guard let n = run.actionCount, n > 0 else { return verb }
+        // A keep-format job looked at everything and will write a fraction of
+        // it, and the button has to say which number is which: "Run (245 of
+        // 2,377 to shrink)" is the promise, "Run 2,377" would be a false one.
+        if let what = run.actionVerb, let total = run.survey?.total {
+            return "\(verb) (\(n) of \(total) \(what))"
+        }
         return "\(verb) \(n)"
     }
 

@@ -107,6 +107,13 @@ guard's three answers, and that a failed write leaves the original byte-equal.
 
 Release as **0.6.0** — it is a write-path change, visible or not.
 
+**Status (2026-11-20): done.** `write(to:as:alpha:)`, `isOpaque`,
+`replaceFile`, `imageSize(of:)`, the guard's new rule, and the two CLAUDE.md
+traps. Measured on this Mac's library: 37 covers, 0.023 s from headers against
+1.526 s decoding them — 65×, every answer equal to the decode's. The timing
+test is off unless `NCOVER_LIBRARY` names a folder. Not verified in a window:
+the confirm text and the refusal tooltip.
+
 ## Phase B: the keep-format jobs — Cap, Square, Pad
 
 The heart of it. Three jobs that are **not framings onto a square**: they
@@ -147,6 +154,24 @@ over a whole library reviewable rather than a leap.
   stops being one.
 
 Release as **0.7.0**.
+
+**Status (2026-11-20): done**, except the editor question below. `BatchJob`
+with `.cap`, `.square`, `.pad(PadFill)`; `jobResultSize` as the one arithmetic
+the survey and the run both ask; `Outcome.skipped`; `keepDest` and
+`batchWriteFormat`; the disc refusal; and the Run button counting what it will
+write ("Run (245 of 2,377 to shrink)"). Two things worth recording:
+
+- **`areaResample` came out of `compose`'s downscale rather than beside it.**
+  A keep-format job shrinks a rectangle to a rectangle, which is the same box
+  filter with its own per-axis ratio and no placement, so both now share one
+  accumulator. The pinned resampling tests passed unchanged across that
+  refactor, which is what made it safe to do first.
+- **`Recipe.framing` is now optional.** A keep-format recipe has no framing,
+  and returning `.cover` for one would have let `render` quietly frame a file
+  that was meant to be tidied. `render` states its fallback instead of
+  pretending the question does not arise.
+
+Still open from this phase: the keep-format jobs are batch-only, matching GTK.
 
 ## Phase C: the list scope
 

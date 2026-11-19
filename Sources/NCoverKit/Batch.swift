@@ -69,6 +69,8 @@ public enum BatchError: LocalizedError, Equatable {
     case emptyImage
     /// Two sources in one run plan the same output file.
     case destinationTaken(first: String, dest: String)
+    /// A keep-format job met a format this app does not write.
+    case keepFormatUnsupported(String)
 
     public var errorDescription: String? {
         switch self {
@@ -84,6 +86,8 @@ public enum BatchError: LocalizedError, Equatable {
             return "Empty image"
         case .destinationTaken(let first, let dest):
             return "would overwrite the output of \(first) (\(dest)); not written"
+        case .keepFormatUnsupported(let ext):
+            return "Cap, Square and Pad keep each file's own format and cannot write .\(ext); left as it is"
         }
     }
 }
@@ -249,6 +253,32 @@ public func surveyBatch(_ scope: BatchScope, needle: String) -> BatchSurvey {
     return BatchSurvey(groups: groups, total: total, emptyRoots: empty)
 }
 
+/// Where one source lands under a **keep-format** job: the same name, the same
+/// extension, mirrored under the output root.
+///
+/// Cap, Square and Pad tidy a file; a tidied `cover.jpg` is still `cover.jpg`.
+/// Which also means two sources in one folder cannot plan the same output the
+/// way the PNG family can — they differ by the very extension they keep.
+public func keepDest(rel: String, outRoot: URL) -> URL {
+    var parts = rel.split(separator: "/").map(String.init)
+    let file = parts.popLast() ?? "image"
+    var p = outRoot
+    for part in parts where part != "." && part != ".." { p.appendPathComponent(part) }
+    return p.appendingPathComponent(file)
+}
+
+/// What format a run writes this destination as, or a refusal naming the
+/// extension. WebP and GIF are refused rather than quietly turned into a PNG
+/// under a name that says otherwise — the GTK sibling's `cap_format` rule.
+public func batchWriteFormat(dest: URL, job: BatchJob) throws -> ImageFormat {
+    guard job.keepsFile else { return .png }
+    guard let f = ImageFormat.of(dest) else {
+        let ext = dest.pathExtension.lowercased()
+        throw BatchError.keepFormatUnsupported(ext.isEmpty ? "(none)" : ext)
+    }
+    return f
+}
+
 /// Where one source lands.
 ///
 /// The shape of the library is the only thing that tells 1,600 files named
@@ -285,8 +315,15 @@ public func batchDest(rel: String, outRoot: URL, disc: Bool) -> URL {
 /// that holds the name, rather than overwriting it without a word.
 ///
 /// The order matches `rels`, so a caller can zip it back onto its hits.
-public func planDests(rels: [String], outRoot: URL, disc: Bool) -> [Result<URL, BatchError>] {
-    let plain = rels.map { batchDest(rel: $0, outRoot: outRoot, disc: disc) }
+public func planDests(rels: [String], outRoot: URL, job: BatchJob,
+                      disc: Bool) -> [Result<URL, BatchError>] {
+    // A keep-format job's names are unique by construction — each output IS
+    // its source's name — so the disambiguation below has nothing to do. The
+    // clash check still runs: it costs one dictionary and it is the thing that
+    // would notice if that reasoning ever stopped being true.
+    let plain = job.keepsFile
+        ? rels.map { keepDest(rel: $0, outRoot: outRoot) }
+        : rels.map { batchDest(rel: $0, outRoot: outRoot, disc: disc) }
     var uses: [String: Int] = [:]
     for p in plain { uses[p.path, default: 0] += 1 }
 
@@ -297,7 +334,7 @@ public func planDests(rels: [String], outRoot: URL, disc: Bool) -> [Result<URL, 
 
     for (rel, p) in zip(rels, plain) {
         var dest = p
-        if uses[p.path, default: 0] > 1 {
+        if !job.keepsFile, uses[p.path, default: 0] > 1 {
             let file = rel.split(separator: "/").last.map(String.init) ?? rel
             let stem = (file as NSString).deletingPathExtension
             let ext = (file as NSString).pathExtension.lowercased()
@@ -324,7 +361,14 @@ public func planDests(rels: [String], outRoot: URL, disc: Bool) -> [Result<URL, 
 /// The one place batch output is produced, so what a preview shows and what a
 /// run writes are identical by construction rather than by two code paths
 /// agreeing. Pure, and therefore runnable off the main actor.
-public func batchRender(_ src: Raster, recipe r: Recipe) throws -> Raster {
+///
+/// `nil` means **left alone**: only the keep-format jobs do that, for a file
+/// already within the cap or already square. A run must not write a file it
+/// would not change — that is what makes a library-wide run reviewable — and
+/// a caller that treats `nil` as a failure is reporting a lie.
+public func batchRender(_ src: Raster, recipe r: Recipe) throws -> Raster? {
     guard src.width > 0, src.height > 0 else { throw BatchError.emptyImage }
-    return render(src, recipe: r)
+    return r.job.keepsFile
+        ? jobRender(src, job: r.job, canvas: r.canvas)
+        : render(src, recipe: r)
 }
