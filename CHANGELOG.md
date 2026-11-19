@@ -8,6 +8,8 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-11-20
+
 All five phases of [`docs/gtk-parity-plan.md`](docs/gtk-parity-plan.md): the
 write layer, the three jobs that tidy a library's covers rather than reframe
 them, ndisc's Export list as a scope, and a grid of every file a run would
