@@ -126,7 +126,7 @@ struct WriteFormatTests {
     // the thing this replaces — gdk-pixbuf reads far into a JPEG, and the
     // claim being made is that ImageIO does not. Off by default, like the GTK
     // side's real-catalogue tests:
-    //   NCOVER_LIBRARY=~/Music/ndisc make test
+    //   NCOVER_LIBRARY=<a folder of real covers> make test
     @Test(.enabled(if: ProcessInfo.processInfo.environment["NCOVER_LIBRARY"] != nil))
     func theHeaderReadIsFasterThanDecodingARealLibrary() throws {
         let root = URL(fileURLWithPath:

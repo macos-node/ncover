@@ -258,7 +258,7 @@ struct CoverListTests {
     }
 
     // Against a list ndisc actually exported, when there is one to hand:
-    //   NCOVER_LIST=~/Desktop/covers.txt make test
+    //   NCOVER_LIST=<an exported cover list> make test
     @Test(.enabled(if: ProcessInfo.processInfo.environment["NCOVER_LIST"] != nil))
     func arealExportParsesAndEveryFolderItNamesExists() throws {
         let url = URL(fileURLWithPath:
