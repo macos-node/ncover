@@ -260,6 +260,18 @@ backend changes.
 
 ## Places, and what was deliberately not ported
 
+- **The window carries the version** (`navigationSubtitle`), read from the
+  bundle rather than written out — the GTK sibling puts it in its title bar
+  and the rest of the suite in a chip. A version string typed twice is a
+  version string that disagrees with itself.
+- **`docs/gtk-parity-plan.md` has a table of where the two layouts differ.**
+  They are the same features in each platform's idiom, not a backlog: GTK has
+  a header switch and a compact control column, this app a sidebar and
+  grouped `Form` sections. What is shared is the vocabulary — the same jobs,
+  the same scopes in the same order, the same counts in the same words — so
+  someone who knows one can use the other. Read that table before "fixing" a
+  difference.
+
 - **Batch is a place in the sidebar, not a sheet**, and that was forced by
   the review grid: the route the grid builds — pick a cover, fix it in the
   editor, come back — closed the sheet every time, and a modal you keep

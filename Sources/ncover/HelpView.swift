@@ -16,7 +16,12 @@ struct HelpView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("n.cover").font(.largeTitle.weight(.semibold))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("n.cover").font(.largeTitle.weight(.semibold))
+                        Text(appVersion)
+                            .font(.system(.callout, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
                     Text("Pick colours, and build cover and label artwork.")
                         .foregroundStyle(.secondary)
                 }

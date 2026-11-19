@@ -26,6 +26,16 @@ final class BatchRunner: ObservableObject {
             case .published: return "ndisc's published releases"
             }
         }
+
+        /// Checked against `NSImage(systemSymbolName:)` rather than trusted:
+        /// a name that does not resolve renders as nothing at all, silently.
+        var symbol: String {
+            switch self {
+            case .folder:    return "folder"
+            case .list:      return "list.bullet"
+            case .published: return "opticaldisc"
+            }
+        }
     }
 
     struct Row: Identifiable {

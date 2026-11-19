@@ -33,6 +33,10 @@ enum AppSection: String, CaseIterable, Identifiable {
     }
 }
 
+/// What the bundle says this build is.
+let appVersion: String =
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     /// The batch runner outlives the sheet it is shown in: the review loop
@@ -61,6 +65,11 @@ struct ContentView: View {
             case .help:     HelpView()
             }
         }
+        // The version beside the name, as the GTK sibling puts it in its
+        // header and the rest of the suite puts it in a chip. Read from the
+        // bundle, never written out here: a version string typed twice is a
+        // version string that disagrees with itself.
+        .navigationSubtitle(appVersion)
         .toolbar { toolbar(for: model.section) }
         .alert("n.cover", isPresented: Binding(
             get: { model.error != nil }, set: { if !$0 { model.error = nil } }

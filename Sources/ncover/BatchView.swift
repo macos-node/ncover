@@ -28,12 +28,20 @@ struct BatchView: View {
             HSplitView {
             Form {
                 Section("What to run it over") {
+                    // Three icons rather than three sentences, as the GTK
+                    // sibling has them: folder · list · disc. What each one
+                    // takes is in the tip, and the row directly below names
+                    // the chosen one anyway (Source / List / Manifest), so
+                    // nothing is carried by the glyph alone.
                     Picker("Scope", selection: $run.scope) {
                         ForEach(BatchRunner.Scope.allCases) { s in
-                            Text(s.label).tag(s)
+                            Image(systemName: s.symbol)
+                                .accessibilityLabel(s.label)
+                                .tag(s)
                         }
                     }
-                    .pickerStyle(.radioGroup)
+                    .pickerStyle(.segmented)
+                    .tip("Where the images come from: a folder of artwork, a text file of release folders (ndisc's Export list), or every release ndisc has published.")
 
                     if run.scope == .folder {
                         LabeledContent("Source") {

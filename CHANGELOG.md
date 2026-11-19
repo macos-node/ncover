@@ -8,6 +8,16 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [1.0.6] — 2026-11-20
+
+### Added
+- **The version sits beside the name** in the window and on the Quick start,
+  read from the bundle — the GTK sibling shows it in its title bar and the
+  rest of the suite in a chip.
+- **Batch's scope is three icon buttons** — folder · list · disc — as it is on
+  the GTK side, rather than three sentences. What each takes is in the tip,
+  and the row under it still names the chosen one.
+
 ## [1.0.5] — 2026-11-20
 
 ### Added

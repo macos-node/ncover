@@ -315,15 +315,67 @@ mode are all things to look at rather than reason about.
 
 ---
 
+## Where the layouts differ, and why
+
+Recorded 2026-11-20, from GTK 0.4.0 beside this app's 1.0.5. **These are not
+bugs and not a backlog.** The two apps are the same features in each
+platform's own idiom, and the point of writing them down is so that a later
+reader can tell a deliberate difference from a thing nobody got round to.
+
+| | GTK | here |
+|---|---|---|
+| Places | A header switch: Edit · Batch · Palettes · ⓘ | A sidebar: Artwork · Batch · Colour · Palettes · Quick start |
+| Colour | A column down the left of the Edit page, always there | Its own sidebar place, plus the pinned palettes in it |
+| Editor sides | Colours left, Source / Result right, each hideable | Inspector right, Source / Result under the canvas, both hideable from one toolbar menu |
+| Batch controls | One column of compact rows: scope icons, Source / Output, name, recipe, Dry run / Run / Stop | A grouped `Form` of titled sections, with Run in the window's footer |
+| Batch right side | A **Files / Last run** pair of tabs | The grid, which the last run's results replace until the recipe changes |
+| Recipe | Dropdowns on one row (`Cover ∨`, `No disc ∨`, `600 px ∨`) | A segmented Job control, a Canvas stepper, a Disc toggle |
+| Version | In the window title: `ncover 0.4.0` | The window's subtitle, beside the name |
+| Samples | Ships sample artwork, with *Open samples folder* and *Restore samples* on the Quick start | **Not built here** — the nearest thing is opening any folder |
+
+**What is shared is the vocabulary, not the furniture**: the same five jobs
+under the same names, the same scopes in the same order (folder · list ·
+disc), the same counts in the same words ("37 images in 21 releases · 2
+releases matched nothing", "Run (10 of 10 to shrink)"), the same grid of every
+file a run would touch, the same Before, the same double-click into the
+editor. Someone who knows one can use the other without being told anything.
+
+**If the two are ever to converge**, the question to settle first is *which
+way*, and it is a real choice rather than an obvious one:
+
+- **Towards GTK's compact column.** Denser, more of the recipe visible at
+  once, and a tab pair that keeps the last run reachable after the grid comes
+  back. It would mean giving up `Form`'s grouped sections, which are what make
+  this app look like a Mac app rather than a port.
+- **Towards this app's titled sections.** Easier to read cold, and the section
+  titles carry a lot of the explanation that GTK puts in tooltips. It would
+  mean more vertical space for the same controls, which is exactly what the
+  GTK window is short of.
+
+Nothing needs deciding to keep both working. Decide it only if the drift
+starts costing something — a feature that lands in one shape and cannot be
+described in the other.
+
 ## Not yet on either side
 
 1-1 means these are **not** built here first. If one is wanted sooner, say so
 deliberately rather than drifting ahead:
 
-- **Write results into the library, keeping originals** — step 3 of the loop.
-  Today both sides output to a folder and the swap is a desktop script. It
-  belongs in the app, with every swap logged and an undo that restores from
-  the log.
+- **Write results into the library, keeping originals** — step 3 of the loop,
+  and **the one piece that makes the loop a loop**. Today both sides output to
+  a folder and the swap back into the library is a desktop script
+  (`swap-covers.py`). It belongs in the app: a run option that moves each
+  original to a chosen originals folder under the same relative path, logs
+  every swap (source, original kept, written), refuses a file whose original
+  slot is already taken, and has an undo that restores from that log. Batch's
+  rule then becomes "never writes over your source *without keeping the
+  original*", and the write-path notes in both `CLAUDE.md`s have to say so.
+
+  **Agreed 2026-11-20: Linux builds this first.** The master library is there,
+  the GTK side is where the desktop script already runs, and the shape of the
+  log and the undo is the part worth getting wrong somewhere it can be watched
+  closely. This app takes it afterwards, as a port of the decisions — the same
+  direction everything in this plan travelled.
 - **Convert (PNG → JPEG)**, for the `ncover:convert` lines.
 - **Dimension filters** beside the name filter (non-square by more than X%,
   long side over / under N px), joining the walk's selection so every count
