@@ -32,39 +32,74 @@ public struct BatchScope: Equatable, Sendable {
     /// than a list of records.
     public var names: [String: String]
 
-    /// Roots that contribute **one named file** rather than everything under
-    /// them, by root path.
+    /// Roots that contribute **only the files a list named** rather than
+    /// everything under them, by root path, in the list's own order.
     ///
     /// A line of ndisc's Export list names the exact cover its flags are
     /// about, and a release folder usually holds back and inlay art too. This
     /// has to live in the scope rather than be a filter applied afterwards,
     /// or the survey and the run could select different files — the number on
     /// the Run button is only true because they cannot.
-    public var only: [String: URL]
+    ///
+    /// **Several lines may name files in one folder.** ndisc's label export is
+    /// one line per label, every one of them pointing into the same folder of
+    /// logos, so a root holds a *list* of named files. Keyed by folder to one
+    /// URL it kept whichever line came last and dropped the rest in silence.
+    public var only: [String: [URL]]
+
+    /// What to call one named file, by its path: the name on the line that
+    /// named it ("Ultra Records").
+    ///
+    /// Wins over `names`, which a folder shared by several lines cannot carry
+    /// — seventy-six logos all captioned by their folder is no caption.
+    public var fileNames: [String: String]
 
     public init(roots: [URL], strip: URL, guardRoot: URL, names: [String: String] = [:],
-                only: [String: URL] = [:]) {
+                only: [String: [URL]] = [:], fileNames: [String: String] = [:]) {
         self.roots = roots; self.strip = strip; self.guardRoot = guardRoot
-        self.names = names; self.only = only
+        self.names = names; self.only = only; self.fileNames = fileNames
     }
 
-    /// Every image one root contributes: the file the list named, or a walk.
+    /// Every image one root contributes: the files the list named, or a walk.
     ///
     /// The single place a root is turned into files. `findImages(in:)` (the
     /// run, the samples) and `surveyBatch` (the counts) both come through
     /// here, so there is nothing that could drift.
     public func images(under root: URL, needle: String) -> [URL] {
-        guard let one = only[root.standardizedFileURL.path] else {
+        // A root with no place under the prefix contributes nothing, here —
+        // the one place a root becomes files — so the survey, the plan and
+        // the run cannot disagree about it. `rootsWithNoPlace` is what says
+        // so on screen.
+        guard isPlaceable(root: root, strip: strip) else { return [] }
+        guard let named = only[root.standardizedFileURL.path] else {
             var out: [URL] = []
             findImages(root: root, needle: needle, into: &out)
             return out
         }
-        let want = needle.lowercased()
-        guard IMAGE_EXTS.contains(one.pathExtension.lowercased()),
-              FileManager.default.fileExists(atPath: one.path),
-              want.isEmpty || one.lastPathComponent.lowercased().contains(want)
-        else { return [] }
-        return [one]
+        // **A named file ignores the name filter.** The list has already
+        // chosen this exact file, and a label's image is not called `cover.*`
+        // — with the filter applied on top of it, the default "cover" takes
+        // every line of a label export straight out of the run.
+        return named.filter {
+            IMAGE_EXTS.contains($0.pathExtension.lowercased())
+                && FileManager.default.fileExists(atPath: $0.path)
+        }
+    }
+
+    /// Roots that lie outside the prefix, so nothing under them has a place.
+    public var rootsWithNoPlace: [URL] {
+        roots.filter { !isPlaceable(root: $0, strip: strip) }
+    }
+
+    /// Named files a root was asked for that are not there, for the survey.
+    ///
+    /// The list was exported before someone moved a file. One missing logo in
+    /// a folder of seventy-six is not a root that matched nothing, and must
+    /// not be reported as one — nor vanish, which is what a list that quietly
+    /// shrinks does.
+    public func missingNamed(under root: URL) -> Int {
+        guard let named = only[root.standardizedFileURL.path] else { return 0 }
+        return named.filter { !FileManager.default.fileExists(atPath: $0.path) }.count
     }
 
     /// A list of release folders — ndisc's Export list, or a hand-made one.
@@ -76,15 +111,37 @@ public struct BatchScope: Equatable, Sendable {
         let chosen = l.lines.filter { l.selects($0, job: job) }
         guard !chosen.isEmpty else { throw BatchError.listEmpty }
         guard let root = l.root else { throw BatchError.listNoRoot }
+        var roots: [URL] = []
         var names: [String: String] = [:]
-        var only: [String: URL] = [:]
+        var fileNames: [String: String] = [:]
+        var only: [String: [URL]] = [:]
+        var linesIn: [String: Int] = [:]
+        var walkWhole = Set<String>()
         for line in chosen {
             let key = line.folder.standardizedFileURL.path
+            // A folder is one root however many lines name it; a duplicate
+            // root would be surveyed twice and report the second pass as a
+            // release that matched nothing.
+            if linesIn[key, default: 0] == 0 { roots.append(line.folder) }
+            linesIn[key, default: 0] += 1
+            if let c = line.cover {
+                var named = only[key] ?? []
+                if !named.contains(c) { named.append(c) }
+                only[key] = named
+                if let n = line.name { fileNames[c.standardizedFileURL.path] = n }
+            } else {
+                // A line with no cover file asks for the whole folder, which
+                // takes in anything another line named there.
+                walkWhole.insert(key)
+            }
             if let n = line.name { names[key] = n }
-            if let c = line.cover { only[key] = c }
         }
-        return BatchScope(roots: chosen.map(\.folder), strip: root, guardRoot: root,
-                          names: names, only: only)
+        for key in walkWhole { only[key] = nil }
+        // A folder several lines share is called by its own path, not by
+        // whichever of them came last.
+        for (key, n) in linesIn where n > 1 { names[key] = nil }
+        return BatchScope(roots: roots, strip: root, guardRoot: root,
+                          names: names, only: only, fileNames: fileNames)
     }
 
     public static func folder(_ root: URL) -> BatchScope {
@@ -125,6 +182,9 @@ public enum BatchError: LocalizedError, Equatable {
     case listUnreadable(String)
     case listEmpty
     case listNoRoot
+    /// A source has no place under the scope's prefix, so there is nowhere to
+    /// mirror it to. Refused rather than written under a name of its own.
+    case noPlace(String)
 
     public var errorDescription: String? {
         switch self {
@@ -148,6 +208,8 @@ public enum BatchError: LocalizedError, Equatable {
             return "No line in that list is for this job. Check the job against the list's actions column — Cap takes the `ncover:cap` lines and Square the `ncover:square` ones."
         case .listNoRoot:
             return "The folders in that list have no parent in common, so there is nothing for the output to mirror."
+        case .noPlace(let what):
+            return "\(what) is not under the scope's own folder, so it has no place in the output; refused rather than written under a name of its own"
         }
     }
 }
@@ -240,16 +302,49 @@ public func findImages(in scope: BatchScope, needle: String) -> [URL] {
         .sorted { $0.path < $1.path }
 }
 
-/// The path of a hit relative to the scope's prefix — the shape the output
-/// mirrors. A hit somewhere outside the prefix falls back to its own filename
-/// rather than producing a path full of `..`.
+/// The path of a hit relative to the scope's prefix, **for display**.
+///
+/// A hit outside the prefix falls back to its own filename rather than a path
+/// full of `..`, which is the right answer for a label in a list and the
+/// wrong one for a write: see `placeUnder`, and never use this to decide
+/// where a file goes.
 public func relativePath(of hit: URL, under strip: URL) -> String {
+    placeUnder(hit, strip: strip) ?? hit.lastPathComponent
+}
+
+/// A file's **place** under the scope's prefix, or `nil` if it has none.
+///
+/// The shape of the library is the only thing that tells 1,600 files named
+/// `cover.png` apart, so a place is the whole path under the prefix and
+/// nothing less. A file that is not under the prefix has no place and is
+/// refused rather than given one: a fallback to its own filename sends every
+/// such file to one name in the output root, and once the write-back lands
+/// (phase F1) the place is also where the original is kept.
+///
+/// Only plain components count. An empty place (the file *is* the prefix) and
+/// anything holding `.` or `..` are refused rather than cleaned up, because
+/// cleaning up is how a kept original escapes the folder it was promised to.
+public func placeUnder(_ hit: URL, strip: URL) -> String? {
     let h = hit.standardizedFileURL.pathComponents
     let s = strip.standardizedFileURL.pathComponents
-    guard h.count > s.count, Array(h.prefix(s.count)) == s else {
-        return hit.lastPathComponent
+    guard h.count > s.count, Array(h.prefix(s.count)) == s else { return nil }
+    let rel = Array(h.dropFirst(s.count))
+    guard !rel.isEmpty, rel.allSatisfy({ $0 != "." && $0 != ".." && !$0.isEmpty }) else {
+        return nil
     }
-    return h.dropFirst(s.count).joined(separator: "/")
+    return rel.joined(separator: "/")
+}
+
+/// Is this root somewhere the scope can place what it finds?
+///
+/// A root is placeable when it *is* the prefix (a folder scope, where the two
+/// are the same path) or lies under it. ndisc's manifest can name a release
+/// outside `libraryRoot` — a library half-moved, a release on another volume —
+/// and every file under such a root would mirror to a bare filename, so they
+/// would land on each other in the output root.
+public func isPlaceable(root: URL, strip: URL) -> Bool {
+    let r = root.standardizedFileURL.path, s = strip.standardizedFileURL.path
+    return r == s || placeUnder(root, strip: strip) != nil
 }
 
 // MARK: - one file
@@ -282,9 +377,18 @@ public struct BatchSurvey: Equatable, Sendable {
     /// Roots that matched nothing. Counted rather than listed — "9 releases
     /// have no cover" is the useful form of that, and naming all nine is not.
     public var emptyRoots: Int
+    /// Files a list named that are not on disk. Its own count, because a list
+    /// exported before someone moved a cover is a normal thing to meet, and
+    /// neither silence nor "matched nothing" says what happened.
+    public var missingNamed: Int
+    /// Roots outside the scope's prefix: nothing under them has a place, so
+    /// nothing under them is in the run. Said rather than quietly dropped.
+    public var rootsWithNoPlace: Int
 
-    public init(groups: [Group], total: Int, emptyRoots: Int) {
+    public init(groups: [Group], total: Int, emptyRoots: Int, missingNamed: Int = 0,
+                rootsWithNoPlace: Int = 0) {
         self.groups = groups; self.total = total; self.emptyRoots = emptyRoots
+        self.missingNamed = missingNamed; self.rootsWithNoPlace = rootsWithNoPlace
     }
 }
 
@@ -293,14 +397,24 @@ public func surveyBatch(_ scope: BatchScope, needle: String) -> BatchSurvey {
     var groups: [BatchSurvey.Group] = []
     var seen = Set<String>()
     var empty = 0
+    var missing = 0
+    var noPlace = 0
     var total = 0
 
     for root in scope.roots {
+        // Counted and skipped before anything else: it is not a root that
+        // matched nothing, it is a root this scope cannot write the results
+        // of anywhere.
+        guard isPlaceable(root: root, strip: scope.strip) else { noPlace += 1; continue }
         let hits = scope.images(under: root, needle: needle)
+        let gone = scope.missingNamed(under: root)
+        missing += gone
         // A file reachable from two roots (nested releases) belongs to the
         // first that found it, so the totals here match what a run writes.
         let fresh = hits.filter { seen.insert($0.standardizedFileURL.path).inserted }
-        guard !fresh.isEmpty else { empty += 1; continue }
+        // A root that brought nothing because the file it named is not there
+        // is counted as that, not as a root that matched nothing.
+        guard !fresh.isEmpty else { if gone == 0 { empty += 1 }; continue }
         let key = root.standardizedFileURL.path
         groups.append(BatchSurvey.Group(
             root: key,
@@ -309,7 +423,8 @@ public func surveyBatch(_ scope: BatchScope, needle: String) -> BatchSurvey {
         total += fresh.count
     }
     groups.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    return BatchSurvey(groups: groups, total: total, emptyRoots: empty)
+    return BatchSurvey(groups: groups, total: total, emptyRoots: empty, missingNamed: missing,
+                       rootsWithNoPlace: noPlace)
 }
 
 /// Where one source lands under a **keep-format** job: the same name, the same
@@ -376,6 +491,17 @@ public func batchDest(rel: String, outRoot: URL, disc: Bool) -> URL {
 /// The order matches `rels`, so a caller can zip it back onto its hits.
 public func planDests(rels: [String], outRoot: URL, job: BatchJob,
                       disc: Bool) -> [Result<URL, BatchError>] {
+    // Belt and braces for the place itself. `batchDest` and `keepDest` build
+    // their path by skipping `.` and `..` components, which flattens a bad
+    // place into a plausible one instead of refusing it — and an absolute
+    // place is worse still, since `appendingPathComponent` would bury it
+    // under the output root under a name nobody chose. Whoever computed these
+    // should have used `placeUnder`; if they did, this cannot fire.
+    let bad = { (rel: String) in
+        rel.isEmpty || rel.hasPrefix("/")
+            || rel.split(separator: "/", omittingEmptySubsequences: false)
+                  .contains { $0 == "." || $0 == ".." || $0.isEmpty }
+    }
     // A keep-format job's names are unique by construction — each output IS
     // its source's name — so the disambiguation below has nothing to do. The
     // clash check still runs: it costs one dictionary and it is the thing that
@@ -384,7 +510,7 @@ public func planDests(rels: [String], outRoot: URL, job: BatchJob,
         ? rels.map { keepDest(rel: $0, outRoot: outRoot) }
         : rels.map { batchDest(rel: $0, outRoot: outRoot, disc: disc) }
     var uses: [String: Int] = [:]
-    for p in plain { uses[p.path, default: 0] += 1 }
+    for (rel, p) in zip(rels, plain) where !bad(rel) { uses[p.path, default: 0] += 1 }
 
     /// Which `rel` has claimed each output path.
     var taken: [String: String] = [:]
@@ -392,6 +518,7 @@ public func planDests(rels: [String], outRoot: URL, job: BatchJob,
     out.reserveCapacity(rels.count)
 
     for (rel, p) in zip(rels, plain) {
+        guard !bad(rel) else { out.append(.failure(.noPlace(rel))); continue }
         var dest = p
         if !job.keepsFile, uses[p.path, default: 0] > 1 {
             let file = rel.split(separator: "/").last.map(String.init) ?? rel

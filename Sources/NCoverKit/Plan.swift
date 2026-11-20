@@ -52,7 +52,11 @@ public struct PlanItem: Identifiable, Equatable, Sendable {
 /// A scope's `names` are keyed by root, and a hit can be nested below one (a
 /// disc subfolder). Falling straight back to the path would lose the record's
 /// name for exactly the releases that are filed in subfolders.
+///
+/// A file a list named carries its own name and is asked first: one folder of
+/// logos is one root, so the folder has no single name to lend its files.
 func nameForFile(_ url: URL, in scope: BatchScope) -> String {
+    if let n = scope.fileNames[url.standardizedFileURL.path] { return n }
     var dir = url.deletingLastPathComponent().standardizedFileURL
     let stop = scope.strip.standardizedFileURL.path
     while true {

@@ -461,8 +461,25 @@ final class BatchRunner: ObservableObject {
             // Planned for the whole run, not file by file: two covers in one
             // release would otherwise plan the same output and the second
             // would replace the first, both reported as written.
+            // A file's PLACE is its whole path under the scope's prefix, and
+            // a file that has none is refused rather than given a name of its
+            // own in the output root — where every such file would land on
+            // the next one. The scope already drops a root it cannot place,
+            // so this is the second lock on the same door.
+            let places = hits.map { placeUnder($0, strip: s.strip) }
+            // Planned over the placeable files and matched back by position,
+            // never looked up by name.
+            var queue = planDests(rels: places.compactMap { $0 }, outRoot: out,
+                                  job: r.job, disc: r.disc != nil).makeIterator()
+            let plan: [Result<URL, BatchError>] = zip(hits, places).map { hit, place in
+                guard place != nil, let next = queue.next() else {
+                    return .failure(.noPlace(hit.path))
+                }
+                return next
+            }
+            // What each row is called is a display question, and the answer
+            // for a file with no place is its own name.
             let rels = hits.map { relativePath(of: $0, under: s.strip) }
-            let plan = planDests(rels: rels, outRoot: out, job: r.job, disc: r.disc != nil)
 
             for ((hit, rel), planned) in zip(zip(hits, rels), plan) {
                 if cancelled { break }

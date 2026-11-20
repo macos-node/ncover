@@ -143,9 +143,71 @@ struct BatchTests {
         #expect(relativePath(of: URL(fileURLWithPath: "/music/Autechre/Amber/cover.png"),
                              under: strip) == "Autechre/Amber/cover.png")
         // A hit outside the prefix keeps its own name rather than producing a
-        // path full of `..` that would escape the output folder.
+        // path full of `..` that would escape the output folder. This is the
+        // DISPLAY answer; `placeUnder` is the one a write may use.
         #expect(relativePath(of: URL(fileURLWithPath: "/elsewhere/cover.png"),
                              under: strip) == "cover.png")
+    }
+
+    // MARK: - a file's place (phase F4)
+
+    @Test func afileOutsideThePrefixHasNoPlaceAtAll() {
+        let strip = URL(fileURLWithPath: "/music")
+        #expect(placeUnder(URL(fileURLWithPath: "/music/A/B/cover.png"), strip: strip)
+                == "A/B/cover.png")
+        // The three refusals, each of which `relativePath`'s fallback would
+        // have turned into a plausible name in the output root.
+        #expect(placeUnder(URL(fileURLWithPath: "/elsewhere/A/cover.png"), strip: strip) == nil)
+        #expect(placeUnder(URL(fileURLWithPath: "/music/../etc/cover.png"), strip: strip) == nil)
+        #expect(placeUnder(strip, strip: strip) == nil, "the prefix itself is not a place in it")
+
+        #expect(isPlaceable(root: strip, strip: strip), "a folder scope's root IS its prefix")
+        #expect(isPlaceable(root: URL(fileURLWithPath: "/music/A"), strip: strip))
+        #expect(!isPlaceable(root: URL(fileURLWithPath: "/elsewhere"), strip: strip))
+    }
+
+    @Test func arootOutsideThePrefixContributesNothingAndSaysSo() throws {
+        // ndisc's manifest can name a release outside `libraryRoot` — a
+        // library half-moved, a release on another volume. Every file under
+        // it would mirror to a bare filename and they would land on each
+        // other in the output root, so the scope takes none of them.
+        let base = tmpdir("outside")
+        let lib = base.appendingPathComponent("library/Artist/Release")
+        let away = base.appendingPathComponent("elsewhere/Other")
+        for d in [lib, away] {
+            try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+            try Data("x".utf8).write(to: d.appendingPathComponent("cover.png"))
+        }
+        let strip = base.appendingPathComponent("library")
+        let scope = BatchScope(roots: [lib, away], strip: strip, guardRoot: strip)
+
+        #expect(findImages(in: scope, needle: "").map { relativePath(of: $0, under: strip) }
+                == ["Artist/Release/cover.png"])
+        #expect(scope.rootsWithNoPlace.map(\.lastPathComponent) == ["Other"])
+        let survey = surveyBatch(scope, needle: "")
+        #expect(survey.total == 1)
+        #expect(survey.rootsWithNoPlace == 1)
+        #expect(survey.emptyRoots == 0, "it is outside the scope, not empty")
+        #expect(survey.total == findImages(in: scope, needle: "").count, "the count is the run")
+    }
+
+    @Test func aplaceThatIsNotAPlainPathIsRefusedByThePlanner() {
+        // The second lock: whoever computes a place should use `placeUnder`,
+        // and if they did not, the planner refuses rather than letting
+        // `appendingPathComponent` bury an absolute path under the output or
+        // flatten a `..` into a name that looks fine.
+        let out = URL(fileURLWithPath: "/out")
+        let plan = planDests(rels: ["A/cover.jpg", "/music/A/cover.jpg", "../up/cover.jpg", ""],
+                             outRoot: out, job: .cap, disc: false)
+        #expect((try? plan[0].get())?.path == "/out/A/cover.jpg")
+        for i in 1...3 {
+            #expect(throws: BatchError.self) { _ = try plan[i].get() }
+        }
+        // And a refused place cannot invent a clash for a good one: the two
+        // `cover.jpg` here are one claim on `/out/A/cover.jpg`, not two.
+        let mixed = planDests(rels: ["A/cover.jpg", "/A/cover.jpg"], outRoot: out,
+                              job: .frame(.cover), disc: false)
+        #expect((try? mixed[0].get())?.lastPathComponent == "cover.png")
     }
 
     @Test func aManifestWithoutALibraryRootUsesWhatItsReleasesShare() throws {

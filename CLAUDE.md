@@ -575,12 +575,42 @@ backend changes.
   files.** `findImages(in:)` (the run, the samples) and `surveyBatch` (the
   counts) both go through it, which is what keeps the button's number true.
   Do not walk a root anywhere else.
-- **A list's "only this cover file" lives in the scope, not in a filter after
-  the walk.** `BatchScope.only` maps a root to the single file it contributes,
-  because ndisc's Export list names the exact cover its flags are about and a
-  release folder usually holds back and inlay art too. A post-walk filter
-  would let the survey and the run select different files, which is precisely
-  the thing the survey exists to rule out.
+- **A file's place is its whole path under the scope's prefix, or nothing.**
+  `placeUnder` answers it and may return `nil`; `relativePath` is the
+  **display** form and falls back to the bare filename, which is right in a
+  Files list and wrong in a write — that fallback sent every file outside the
+  prefix to the top of the output folder, on top of the next one, all
+  reported as written. So: a root outside the prefix contributes no files
+  (`isPlaceable`, checked in `images(under:)`, counted as
+  `rootsWithNoPlace`), the run asks `placeUnder` and refuses what has no
+  place, and `planDests` refuses a place that is not a plain relative path —
+  `batchDest` and `keepDest` skip `.` and `..` components, which *flattens* a
+  bad place into a plausible one. Three locks, because the write-back (F1)
+  will make the place decide where someone's original is kept.
+- **A list's "only these files" lives in the scope, not in a filter after the
+  walk.** `BatchScope.only` maps a root to the files it contributes, because
+  ndisc's Export list names the exact cover its flags are about and a release
+  folder usually holds back and inlay art too. A post-walk filter would let
+  the survey and the run select different files, which is precisely the thing
+  the survey exists to rule out.
+- **A root's named files are a list, not one file.** ndisc's label export is
+  one line per label and every line points into the same folder of logos, so
+  `only` is `[String: [URL]]` and `BatchScope.list` adds one root per folder
+  however many lines name it. Keyed to a single URL it kept whichever line
+  came last: a 76-line export ran over one image and reported the other 75
+  roots as releases that matched nothing. Three things follow from it, and
+  each is a test:
+  - **A named file ignores the name filter.** The list already chose that
+    exact file, and a label's image is not called `cover.*` — GTK's default
+    `cover` filter took every label line out of the run before this was fixed
+    there.
+  - **`fileNames` names a named file, and `nameForFile` asks it first.** A
+    folder shared by several lines carries no one line's name, so `names`
+    loses its entry and each file is captioned by its own label.
+  - **A named file that is gone is `missingNamed`, not an empty root.** A list
+    exported before someone moved a cover is normal; one logo missing from a
+    folder of seventy-six is neither a failure nor a root that matched
+    nothing, and it must not vanish.
 - **Under a list the job is part of the scope.** `BatchScope.list(_:job:)`
   takes the job because the job picks the lines — Cap takes `ncover:cap`,
   Square and Pad `ncover:square` — so a Cap run and a Square run over one

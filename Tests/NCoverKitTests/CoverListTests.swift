@@ -145,8 +145,9 @@ struct CoverListTests {
         #expect(scope.strip.path == "/lib")
         #expect(scope.guardRoot.path == "/lib", "the guard protects the whole library")
         #expect(scope.names["/lib/Autechre/Amber"] == "Autechre — Amber")
-        #expect(scope.only["/lib/Autechre/Amber"]?.lastPathComponent == "cover.jpg")
+        #expect(scope.only["/lib/Autechre/Amber"]?.map(\.lastPathComponent) == ["cover.jpg"])
         #expect(scope.only["/lib/Boards/Geogaddi"] == nil, "no named cover: walk it")
+        #expect(scope.fileNames["/lib/Autechre/Amber/cover.jpg"] == "Autechre — Amber")
 
         // A framing has no action of its own, so it takes the list whole —
         // which is the right answer, not an oversight: "run Cover over these
@@ -190,10 +191,11 @@ struct CoverListTests {
         #expect(findImages(in: walked, needle: "cover").map(\.lastPathComponent) == ["cover.jpg"])
     }
 
-    @Test func anamedCoverThatIsNotThereContributesNothing() throws {
+    @Test func anamedCoverThatIsNotThereIsCountedAsThat() throws {
         // The list was exported before someone moved the file. Nothing to do
-        // and nothing to fail: the release simply matches nothing, which the
-        // survey already counts as an empty root.
+        // and nothing to fail — but it is not a release that "matched
+        // nothing" either, and once a folder holds several named files one
+        // missing from it cannot be read off an empty-root count at all.
         let base = tmpdir("gone")
         let release = base.appendingPathComponent("Artist/Album")
         try FileManager.default.createDirectory(at: release, withIntermediateDirectories: true)
@@ -201,7 +203,67 @@ struct CoverListTests {
             "\(release.path)\t\(release.appendingPathComponent("cover.jpg").path)\tArtist — Album\t900x900\t-\tjpeg\tover-600\tncover:cap")
         let scope = try BatchScope.list(l, job: .cap)
         #expect(findImages(in: scope, needle: "").isEmpty)
-        #expect(surveyBatch(scope, needle: "").emptyRoots == 1)
+        let survey = surveyBatch(scope, needle: "")
+        #expect(survey.missingNamed == 1)
+        #expect(survey.emptyRoots == 0, "it named a file; it did not match nothing")
+    }
+
+    // MARK: - several lines in one folder (phase F7)
+
+    @Test func manyLinesNamingFilesInOneFolderTakeEveryOneOfThem() throws {
+        // ndisc's label export: one line per label, every one of them pointing
+        // into the same folder of logos. Keyed by folder to a single URL, the
+        // scope kept whichever line came last — so a 76-line export ran over
+        // one image and called the other 75 folders empty.
+        let base = tmpdir("shared")
+        let logos = base.appendingPathComponent("labels")
+        try FileManager.default.createDirectory(at: logos, withIntermediateDirectories: true)
+        for f in ["Ultra.Records.label.jpg", "Mute.label.jpg", "unlisted.jpg"] {
+            try flat(400, 300).writeJPEG(to: logos.appendingPathComponent(f))
+        }
+        try flat(400, 300).writePNG(to: logos.appendingPathComponent("Warp.label.png"))
+
+        let line = { (f: String, n: String) in
+            [logos.path, logos.appendingPathComponent(f).path, n, "-", "-", "-", "-",
+             "ncover:square"].joined(separator: "\t")
+        }
+        let l = parseCoverList([line("Ultra.Records.label.jpg", "Ultra Records"),
+                                line("Warp.label.png", "Warp"),
+                                line("Mute.label.jpg", "Mute"),
+                                line("Gone.label.jpg", "Gone")].joined(separator: "\n"))
+        let scope = try BatchScope.list(l, job: .square)
+        #expect(scope.roots.map(\.path) == [logos.path], "one folder is one root")
+        #expect(scope.names.isEmpty, "a shared folder carries no one line's name")
+        #expect(scope.only[logos.standardizedFileURL.path]?.count == 4)
+
+        // The name filter does not reach a named file: the default "cover"
+        // would otherwise take every label out of the run.
+        for needle in ["", "cover"] {
+            let got = findImages(in: scope, needle: needle).map(\.lastPathComponent).sorted()
+            #expect(got == ["Mute.label.jpg", "Ultra.Records.label.jpg", "Warp.label.png"],
+                    "every named file that is there, and nothing else, with “\(needle)”")
+        }
+
+        let survey = surveyBatch(scope, needle: "cover")
+        #expect(survey.total == 3)
+        #expect((survey.emptyRoots, survey.missingNamed) == (0, 1), "Gone is counted, by itself")
+        #expect(survey.total == findImages(in: scope, needle: "cover").count,
+                "the count is the run")
+
+        // Each file is captioned by its own line, since the folder cannot be.
+        let plan = planItems(files: findImages(in: scope, needle: ""), scope: scope,
+                             recipe: Recipe(canvas: 400, job: .square, disc: nil))
+        #expect(Set(plan.map(\.name)) == ["Ultra Records", "Warp", "Mute"])
+
+        // A line with no cover file asks for the whole folder, which takes in
+        // anything another line named there.
+        let whole = parseCoverList(l.lines.map { line in
+            [line.folder.path, line.cover?.path ?? "-", line.name ?? "-", "-", "-", "-", "-",
+             "ncover:square"].joined(separator: "\t")
+        }.joined(separator: "\n") + "\n\(logos.path)\t-\t-\t-\t-\t-\t-\tncover:square")
+        let all = try BatchScope.list(whole, job: .square)
+        #expect(all.only.isEmpty, "the fileless line re-opens the folder")
+        #expect(findImages(in: all, needle: "").count == 4, "including the unlisted logo")
     }
 
     @Test func acapRunFromAListTouchesOnlyTheLinesItIsFor() throws {

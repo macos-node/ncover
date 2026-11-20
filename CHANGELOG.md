@@ -8,6 +8,36 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Fixed
+- **A file outside the scope's own folder was given a name of its own
+  instead of being refused.** The path a run mirrors fell back to the file's
+  bare filename when it sat outside the scope's prefix — so every such file
+  landed in the top of the output folder, on top of the next one, each
+  reported as written. ndisc's manifest naming a release outside the library
+  root is how it arises. A file's *place* is now its whole path under the
+  prefix or nothing (`placeUnder`): a root outside the prefix contributes no
+  files at all and the survey says so ("1 release is outside the scope"), and
+  the planner refuses a place that is not a plain relative path rather than
+  flattening a `..` or burying an absolute path under the output. Phase F4,
+  the shape of the bug the GTK sibling found first.
+- **A list naming several files in one folder took only one of them.**
+  ndisc's label Export list (0.8.1) is one line per label, every line
+  pointing into the same folder of logos, and the scope kept them by folder
+  — so whichever line came last won, a 76-line export ran over a single
+  image, and the other 75 roots were reported as releases that matched
+  nothing. A root now holds every file its lines named, in the list's order,
+  and a folder is one root however many lines name it. Phase F7, the GTK
+  sibling's fix of 2026-11-20 ported.
+  - **A named file ignores the name filter.** The list has already chosen
+    that exact file, and a label's image is not called `cover.*`.
+  - **Each named file is captioned by its own line** ("Ultra Records"), since
+    a folder shared by several lines has no single name to lend them.
+  - **A named file that is not there is counted as that** — "1 named file is
+    not there" — rather than as a release that matched nothing, which is a
+    count that cannot say anything useful once one folder holds many files.
+  - **A line with no cover file re-opens its folder**, taking in anything
+    another line named there.
+
 ## [1.0.6] — 2026-11-20
 
 ### Added

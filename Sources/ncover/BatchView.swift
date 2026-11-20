@@ -401,6 +401,17 @@ struct BatchView: View {
         if s.emptyRoots > 0 {
             out += " · \(s.emptyRoots) \(what)\(s.emptyRoots == 1 ? "" : "s") matched nothing"
         }
+        if s.rootsWithNoPlace > 0 {
+            // Not under the scope's own folder, so there is nowhere to mirror
+            // what is in it: ndisc's manifest naming a release outside the
+            // library root is how this arises.
+            out += " · \(s.rootsWithNoPlace) \(what)\(s.rootsWithNoPlace == 1 ? " is" : "s are") outside the scope"
+        }
+        if s.missingNamed > 0 {
+            // The list named a file that is not there any more. Said plainly:
+            // it is neither a failure nor nothing, and it is someone's to look at.
+            out += " · \(s.missingNamed) named file\(s.missingNamed == 1 ? " is" : "s are") not there"
+        }
         if let n = run.changeCount, let verb = run.actionVerb {
             out += " · \(n) \(verb), \(s.total - n) already as they should be"
         }
