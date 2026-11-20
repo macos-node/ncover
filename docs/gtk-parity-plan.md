@@ -364,7 +364,7 @@ sidebar here, header switch there; Colour as a place here, a column there;
 `Form` sections here, compact rows there. Those stay as the table above
 records them. What follows is the rest: behaviour that should match, and the
 small things each side does better. GTK has already taken its share (below);
-this app's share is F1–F6, in that order.
+this app's share is F1–F7, in that order (F7 can go any time).
 
 ### Already taken by GTK from this app (2026-11-20, unreleased there)
 
@@ -498,6 +498,68 @@ output folder is the source itself, and was fixed on 2026-11-20 by refusing
 such a file with the reason (`rel_under`). Do the same here: return a
 failure, never a made-up place. It is reachable with a published manifest
 whose release folders are not under its `library_root`.
+
+### F7. A list may name several files in one folder (S)
+
+**Where this is going.** The user's aim (2026-11-20): label artwork handled
+the same way as release covers, in both apps. Today a label is only
+`{name, imageUrl, siteUrl}` in ndisc, with nothing on disk to check, so none
+of the cover tools see labels. ndisc's backlog 4b plans three stages:
+
+1. survey the published label images (size, PNG, not square) into the
+   quality group, from headers, no local files;
+2. move labels into ndisc's database (kind 31238 unchanged);
+3. a **label art folder** setting, matched by normalised name, so labels
+   join the quality survey and the **Export list**, one line per label.
+
+Stage 3 is where n.cover comes in, by the same loop as covers: ndisc
+exports the lines, n.cover runs Square, Cap or Pad over them from *From a
+list…* (Pad was built partly for logos: square without cropping), writes
+them back keeping the originals (F1), and ndisc uploads and republishes.
+**n.cover needs no label-specific feature** — no Labels page, no label
+scope. A label is a list line whose file happens to be a logo.
+
+**The one thing in the way.** Covers live one release per folder; label art
+lives **many labels in one folder** (the masters folder: ~363 files such as
+`Ultra.Records.label.jpg`). The list scope was built around covers:
+`BatchScope.only` (like GTK's `Scope::only` until 2026-11-20) maps a folder
+to **one** named file, so 290 label lines into one folder take only the
+last line's logo — and a survey and run that agree with each other on the
+wrong number, so nothing looks broken. Found by reading the code while
+planning, not by a failure; no export with shared folders exists yet.
+
+**Decisions** (GTK, ported as decisions, with its test
+`many_lines_naming_files_in_one_folder_take_every_one_of_them`):
+
+- **Key named files per line, keep roots per folder.** `only` maps a folder
+  to *every* file named in it, in list order, de-duplicated. A folder is
+  one walk root however many lines name it, so the survey groups and the
+  "N images in M folders" line count folders, not lines.
+- **Names follow the line, not the folder.** Each file takes its own line's
+  name (`file_names`, checked first by `nameForFile`). A folder several
+  lines share loses its folder-level name rather than wearing whichever
+  line came last — it is called by its own name.
+- **A missing file is reported by itself.** One unreadable entry per missing
+  named file, naming the file, under its folder; the folder's other files
+  still run, and it is not also counted as an empty root.
+- **A bare folder line still means the whole folder.** If any line names
+  the folder without a file, the folder is walked as before, taking the
+  named files and the rest. A hand-made list of folders keeps working.
+- **Nothing else changes.** Each file's place for output and for kept
+  originals is still its whole path under the list's root (F1, F6), so a
+  logo's original is kept at `originals/<labels folder>/<file>`, and two
+  logos never share a slot because they never share a name in one folder.
+
+**Why not a label scope, or a labels mode.** Considered and set aside: it
+would be a fourth scope that is only a list with a different file, and the
+two apps would then need a label vocabulary of their own. Keeping it as
+list lines means ndisc owns which labels need work (it is the one that
+knows what is published), n.cover stays a reader of plain files, and the
+fix is one data-structure change on each side.
+
+**Order.** F7 is independent of F1–F6 and small. It is only *needed* once
+ndisc's stage 3 exports label lines, but should land before then, so the
+first label export is not run over one logo.
 
 ## Not yet on either side
 
