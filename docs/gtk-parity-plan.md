@@ -566,6 +566,18 @@ fix is one data-structure change on each side.
 ndisc's stage 3 exports label lines, but should land before then, so the
 first label export is not run over one logo.
 
+### F8. The Label art scope and the `_labels` skip (S)
+
+GTK 2026-11-20 (unreleased, for 0.5.0): a fourth scope button (a tag) after
+folder · list · disc — `<library root>/_labels`, the root read from
+published.json, offered only when the manifest is. It is a folder scope on
+that directory; the name filter is emptied on entering it (label files are
+not `cover.*`) and restored on leaving. And every folder walk skips a
+directory named `_labels` (SUITE.md reserves it), unless it is the folder
+being walked. GTK test: `a_walk_skips_labels_unless_it_is_the_folder_walked`.
+Labels still also reach n.cover as list lines (F7); the scope is for
+running over the whole folder.
+
 ## Not yet on either side
 
 1-1 means these are **not** built here first. If one is wanted sooner, say so
