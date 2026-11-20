@@ -587,6 +587,13 @@ secondaries) sits after History. Asked for because white had no way in.
 This app already has both through macOS's own Colours panel (its hex field
 and crayons), so port only if that panel proves to be too far away.
 
+### F10. Fit at 75% and 50% (XS)
+
+GTK 2026-11-20 (unreleased): two buttons beside Fit place the whole image
+at 75% or 50% of the canvas, centred (`Placement::fit_at`), so a logo that
+runs to the edge gets a margin that + Background then fills. Port as two
+more framing actions next to Fit.
+
 ## Not yet on either side
 
 1-1 means these are **not** built here first. If one is wanted sooner, say so
