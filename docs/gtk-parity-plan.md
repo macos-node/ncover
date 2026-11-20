@@ -539,6 +539,10 @@ planning, not by a failure; no export with shared folders exists yet.
   name (`file_names`, checked first by `nameForFile`). A folder several
   lines share loses its folder-level name rather than wearing whichever
   line came last — it is called by its own name.
+- **A named file ignores the name filter.** The filter (default "cover")
+  narrows a walk; a file the list names was chosen by the list. Found on
+  ndisc's first real label export, where the filter dropped every
+  `*.label.jpg`. GTK test: the shared-folder test above, run under "cover".
 - **A missing file is reported by itself.** One unreadable entry per missing
   named file, naming the file, under its folder; the folder's other files
   still run, and it is not also counted as an empty root.
@@ -550,7 +554,8 @@ planning, not by a failure; no export with shared folders exists yet.
   logo's original is kept at `originals/<labels folder>/<file>`, and two
   logos never share a slot because they never share a name in one folder.
 
-**Why not a label scope, or a labels mode.** Considered and set aside: it
+**Why not a label scope, or a labels mode. Decided 2026-11-20 by the user:
+labels stay list lines.** Considered and set aside: it
 would be a fourth scope that is only a list with a different file, and the
 two apps would then need a label vocabulary of their own. Keeping it as
 list lines means ndisc owns which labels need work (it is the one that
