@@ -327,7 +327,7 @@ reader can tell a deliberate difference from a thing nobody got round to.
 | Places | A header switch: Edit · Batch · Palettes · ⓘ | A sidebar: Artwork · Batch · Colour · Palettes · Quick start |
 | Colour | A column down the left of the Edit page, always there | Its own sidebar place, plus the pinned palettes in it |
 | Editor sides | Colours left, Source / Result right, each hideable | Inspector right, Source / Result under the canvas, both hideable from one toolbar menu |
-| Batch controls | One column of compact rows: scope icons, Source / Output, name, recipe, Dry run / Run / Stop | A grouped `Form` of titled sections, with Run in the window's footer |
+| Batch controls | One column of compact rows under the same four section titles as here (since 2026-11-20): scope icons, Source, Output, recipe, Dry run / Run / Stop, and why Run is greyed out under them | A grouped `Form` of titled sections, with Run in the window's footer and why it cannot go beside it |
 | Batch right side | A **Files / Last run** pair of tabs | The grid, which the last run's results replace until the recipe changes |
 | Recipe | Dropdowns on one row (`Cover ∨`, `No disc ∨`, `600 px ∨`) | A segmented Job control, a Canvas stepper, a Disc toggle |
 | Version | In the window title: `ncover 0.4.0` | The window's subtitle, beside the name |
@@ -356,26 +356,156 @@ Nothing needs deciding to keep both working. Decide it only if the drift
 starts costing something — a feature that lands in one shape and cannot be
 described in the other.
 
+## Phase F: what GTK did after 0.4.0, and what this app takes from it
+
+Recorded 2026-11-20, after comparing this app's 1.0.6 with GTK side by side
+(screenshots of every place). **Agreed: each app keeps its own layout** —
+sidebar here, header switch there; Colour as a place here, a column there;
+`Form` sections here, compact rows there. Those stay as the table above
+records them. What follows is the rest: behaviour that should match, and the
+small things each side does better. GTK has already taken its share (below);
+this app's share is F1–F6, in that order.
+
+### Already taken by GTK from this app (2026-11-20, unreleased there)
+
+- **The four section titles** in Batch's column: *What to run it over*,
+  *Where the results go*, *The recipe*, *What it will touch*. Same words.
+- **Why Run cannot go, said in place**, with Run and Dry run greyed out —
+  this app's footer line. GTK had a dialog on press.
+- **`nameForFile`**, ported as `Scope::name_for_file`: a file is named by the
+  record of the nearest named folder above it, else its folder under the
+  scope. GTK's folder scope had captioned every cell with the scope folder's
+  own name.
+
+### F1. Write into the library, keeping the originals (port; L)
+
+Step 3 of the loop. GTK's `ncover/src/writeback.rs` is the reference; port
+its decisions and its tests, not its code. In GTK's words, the rule becomes
+**"never writes over your source without keeping the original."**
+
+- **Where:** *Where the results go* gets a choice, **To a folder** / **Into the
+  library**. Into the library is offered for **Cap, Square and Pad only**:
+  they keep the file's name and format, so ndisc's `cover_art_path` still
+  points at it. Cover and Fit write a PNG under another name; the choice is
+  disabled for them, and picking one while it is on goes back to a folder.
+  Under Into the library the folder chooser picks the **originals folder**,
+  which is remembered between launches.
+- **Per file, in this order** — the library holds the old file or the new
+  one at every moment, never neither:
+  1. Refuse if the original's slot (`originals/<rel>`) is already taken: a
+     second run must never overwrite the first original. Per file, with the
+     reason; a dry run refuses it too.
+  2. Copy the original whole into its slot: a temp name beside the slot,
+     synced, length checked, modified time kept, renamed into place. A
+     copy, not a move, so the originals folder may be on another disk.
+  3. Write the result beside the source (`.cover.jpg.ncover-tmp`) and rename
+     it over the source — what Overwrite already does. If this fails, delete
+     the kept copy, so the slot is free.
+  4. Append the `swap` line to the log. If the log cannot be written, put
+     the original straight back: a swap the log does not know about cannot
+     be undone.
+- **The path rule.** The library file written is the walked source itself,
+  never a path rebuilt from names, and its slot is its **whole** path under
+  the scope's root, matched to its plan by position. So
+  `Autechre/Amber/cover.jpg` and `Boards of Canada/Amber/cover.jpg` keep their
+  originals in two places (GTK test:
+  `the_same_title_under_two_artists_keeps_two_originals_in_two_places`). A
+  file not under the root, or whose relative path holds `..`, is **refused**
+  — see F6.
+- **The guard** (`guard_originals`): the originals folder may not be the
+  library, inside it (the next run would walk the originals as covers), or
+  above it.
+- **The log** is `ncover-log.tsv` in the root of the originals folder. Keep
+  the format identical, so either app's log reads the same:
+
+  ```
+  # n.cover write-back log. One `swap` line per replaced file, one `undo` line per run put back.
+  # swap	run	time	job	library file	original kept	before	after	written bytes	written mtime (ns)
+  # undo	run	time	restored	skipped
+  swap	20261120-103913	2026-11-20 10:39:13	square	/…/library/A/Amber/cover.jpg	/…/originals/A/Amber/cover.jpg	600x538	538x538	22725	1795145953867044569
+  undo	20261120-103913	2026-11-20 10:52:01	2	0
+  ```
+
+  Tab-separated, absolute paths, one line per file appended and synced as it
+  happens. `run` is the local start time, made unique against the log
+  (`-2`, `-3` for two runs in one second); `job` is `cap`, `square` or `pad`.
+  A path holding a tab or a line break is refused (the log could not record
+  it).
+- **Put back last run**: restores the newest run without an `undo` line,
+  newest swap first. A library file whose size or modified time is not what
+  the run wrote has changed since (edited by hand, say) and is **left as it
+  is**, named, with its original still kept. Restoring copies the original
+  beside the library file and renames it over, then deletes the kept copy
+  and prunes now-empty folders. Then an `undo` line marks the run. Pressing
+  it again reaches the run before. The user rated this nice-to-have; it is
+  built on GTK, so port it.
+- **Asking first.** A real run into the library confirms: "Replace N covers
+  in the library?", naming the library, the originals folder and the log.
+  Put back confirms too. On GTK the Run button turns red (destructive) while
+  this output is on; here, the footer's Run button should take the same
+  destructive role.
+- **After a run or a Put back**, the plan recounts (the fixed covers drop out
+  of Square's grid), and **the run's results stay on screen** — see F3.
+- **Quick start**: "It never writes over your originals: the output folder
+  cannot be the source, inside it, or above it" becomes true only of *To a
+  folder*. Reword it, and add a line for Into the library.
+- **Tests to port** (GTK `writeback_tests`): a run replaces and keeps byte for
+  byte and logs; the two-artists case, including its Put back; outside the
+  root / `..` refused; a taken slot refused, dry or not, both files
+  untouched; a square file left alone and a dry run writing and keeping
+  nothing; Cover and Fit refused; Put back skips a changed file, keeps its
+  original, prunes empty folders and marks the run; two runs put back newest
+  first with distinct run ids; the guard's three refusals.
+
+### F2. Dry run is a button, not a toggle (S; before or with F1)
+
+Today the footer's **Run 37** does whatever the *Dry run* switch says. Left
+off, it writes; left on, a real run looks like it did nothing. Once Run can
+replace files in the library that ambiguity is not acceptable. Two buttons,
+as GTK has: **Dry run** and **Run**, with Run taking the destructive style
+only under Into the library.
+
+### F3. Keep the last run reachable (S)
+
+Here the last run's results replace the grid until the recipe changes, then
+are gone. GTK's **Files / Last run** pair keeps both. Take that as a
+two-segment control above the grid. It matters most after F1: the grid
+recounts (the fixed covers leave it), and the list of what was replaced has
+to stay readable.
+
+### F4. Grid captions (XS, optional)
+
+The cells here show only their number; GTK's show the number, the release
+name and the size change. Both are fine — the Files list carries the detail
+here — but if the number alone is ever ambiguous, add the name the Files
+list already has (`nameForFile`).
+
+### F5. Small wording (XS)
+
+- The empty Artwork page says *Open a PNG or SVG*; it opens JPEG and WebP
+  too.
+- *Every output is a PNG. Not a preference — the disc mask needs an alpha
+  channel.* under the recipe should show only for Cover and Fit (Cap, Square
+  and Pad keep the format). Check it follows the job.
+
+### F6. A file outside the scope's root has no place (S; with F1)
+
+`relativePath(of:under:)` falls back to the **file name** for a hit outside
+the prefix. For a folder run that can put two releases' `cover.jpg` at one
+output path; for F1 it would put an original at `originals/cover.jpg`.
+GTK's equivalent fell back to the *absolute* path, which joined onto the
+output folder is the source itself, and was fixed on 2026-11-20 by refusing
+such a file with the reason (`rel_under`). Do the same here: return a
+failure, never a made-up place. It is reachable with a published manifest
+whose release folders are not under its `library_root`.
+
 ## Not yet on either side
 
 1-1 means these are **not** built here first. If one is wanted sooner, say so
 deliberately rather than drifting ahead:
 
-- **Write results into the library, keeping originals** — step 3 of the loop,
-  and **the one piece that makes the loop a loop**. Today both sides output to
-  a folder and the swap back into the library is a desktop script
-  (`swap-covers.py`). It belongs in the app: a run option that moves each
-  original to a chosen originals folder under the same relative path, logs
-  every swap (source, original kept, written), refuses a file whose original
-  slot is already taken, and has an undo that restores from that log. Batch's
-  rule then becomes "never writes over your source *without keeping the
-  original*", and the write-path notes in both `CLAUDE.md`s have to say so.
-
-  **Agreed 2026-11-20: Linux builds this first.** The master library is there,
-  the GTK side is where the desktop script already runs, and the shape of the
-  log and the undo is the part worth getting wrong somewhere it can be watched
-  closely. This app takes it afterwards, as a port of the decisions — the same
-  direction everything in this plan travelled.
+- ~~Write results into the library, keeping originals~~ — **built on GTK
+  2026-11-20; see Phase F.**
 - **Convert (PNG → JPEG)**, for the `ncover:convert` lines.
 - **Dimension filters** beside the name filter (non-square by more than X%,
   long side over / under N px), joining the walk's selection so every count
