@@ -578,6 +578,15 @@ being walked. GTK test: `a_walk_skips_labels_unless_it_is_the_folder_walked`.
 Labels still also reach n.cover as list lines (F7); the scope is for
 running over the whole folder.
 
+### F9. Typing a colour, and Basics (XS; probably nothing to port)
+
+GTK 2026-11-20 (unreleased): the HEX / RGB / HSL readout became a field
+that takes a typed colour (`#fff`, `rgb(…)`, `hsl(…)`, `white`) on Enter,
+and a fixed **Basics** strip (white, greys, black, RGB primaries and
+secondaries) sits after History. Asked for because white had no way in.
+This app already has both through macOS's own Colours panel (its hex field
+and crayons), so port only if that panel proves to be too far away.
+
 ## Not yet on either side
 
 1-1 means these are **not** built here first. If one is wanted sooner, say so
