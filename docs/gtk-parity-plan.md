@@ -366,6 +366,17 @@ records them. What follows is the rest: behaviour that should match, and the
 small things each side does better. GTK has already taken its share (below);
 this app's share is F1–F7, in that order (F7 can go any time).
 
+**Where this stands, 2026-11-21.** **F1, F6 and F7 are done** — each is
+marked below with what came out differently from the plan. **Convert**, from
+*Not yet on either side*, was **built here first** on the user's word, with
+three decisions that are new and travel back to GTK; it has its own section
+after F10. Left, in the order worth doing them: **F8** (the rest of the
+label loop), **F2** and **F3** (furniture that F1 makes matter), **F5**
+(wording, two lines), **F4** (optional) and **F10**. **F9 needs nothing**,
+as it says. The first real run of the loop is still to happen, and the
+window itself has not been looked at: everything in F1's UI, the confirm
+and the Put back report are the user's to see.
+
 ### Already taken by GTK from this app (2026-11-20, unreleased there)
 
 - **The four section titles** in Batch's column: *What to run it over*,
@@ -377,7 +388,34 @@ this app's share is F1–F7, in that order (F7 can go any time).
   scope. GTK's folder scope had captioned every cell with the scope folder's
   own name.
 
-### F1. Write into the library, keeping the originals (port; L)
+### F1. Write into the library, keeping the originals (port; L) — **DONE 2026-11-21**
+
+**As built**, in `Sources/NCoverKit/WriteBack.swift` and Batch's second
+Output, with ten tests carrying GTK's own test names. The order, the guard,
+the taken slot, the log and *Put back last run* are as written below. What
+came out differently, or is worth knowing:
+
+- **Cover and Fit are refused, not disabled.** A Mac's segmented control
+  cannot grey out one segment, so the reason shows under the choice *and*
+  `blocker` refuses on it, both reading one sentence — this app's pattern
+  for the disc refusal. Picking a framing while Into the library is on does
+  not silently go back to a folder; it says why it cannot run.
+- **A failure after the swap undoes the swap**, which covers the log line
+  that cannot be written (as below) *and* the file just written failing to
+  read back for its numbers: both leave a swap nothing can undo.
+- **`pruneEmpty` is `rmdir`, never `removeItem`** — it walks upward through
+  the user's originals folder, and the Foundation call would take a folder
+  and everything in it.
+- **`fileStamp` is `lstat`**: `Date` cannot hold nanoseconds since 1970 in a
+  `Double`, and the undo's whole test for "unchanged" is size plus mtime.
+- **The confirm is state on the runner** (`pendingLibraryRun`), not a dialog
+  the view owns, so the question cannot be mislaid and the run cannot start
+  behind it. A dry run asks nothing, because it writes nothing.
+- **`holdResults`**: a library run and an undo each cause the refresh that
+  would clear their own report. The grid recounts; the report stays.
+- The originals folder is remembered under GTK's own key
+  (`ColorData.originals`); `ContentView` hands the runner the way to write
+  it, since the runner does not own the store.
 
 Step 3 of the loop. GTK's `ncover/src/writeback.rs` is the reference; port
 its decisions and its tests, not its code. In GTK's words, the rule becomes
@@ -488,7 +526,27 @@ list already has (`nameForFile`).
   channel.* under the recipe should show only for Cover and Fit (Cap, Square
   and Pad keep the format). Check it follows the job.
 
-### F6. A file outside the scope's root has no place (S; with F1)
+### F6. A file outside the scope's root has no place (S; with F1) — **DONE 2026-11-21**
+
+**As built:** `placeUnder` answers a file's place or nothing, and
+`relativePath` keeps the filename fallback as the **display** form, which is
+right in a Files list and wrong in a write. Three locks, because F1 makes a
+place decide where someone's original is kept: a root outside the prefix
+contributes no files at all (`isPlaceable`, checked in
+`images(under:needle:)` — the one place a root becomes files — and counted
+as `rootsWithNoPlace`, "1 release is outside the scope"); the run asks
+`placeUnder` per file; and `planDests` refuses a place that is not a plain
+relative path, since `batchDest` and `keepDest` *flatten* `.` and `..`
+instead of refusing them. **Refused at the root rather than per file** is
+this app's own term for GTK's rule: the survey, the plan and the run cannot
+then disagree, and the reason is sayable where it arises.
+
+One more came out of the first real export: **a list's mirror prefix is the
+deepest folder holding every line folder's PARENT**, as GTK's
+`common_parent` has always been. It only shows where the lines share a
+folder — a label export — and there it decides between
+`reflection-labels/x.png` and a loose `x.png`, and between an original kept
+under its own folder and one kept beside the log.
 
 `relativePath(of:under:)` falls back to the **file name** for a hit outside
 the prefix. For a folder run that can put two releases' `cover.jpg` at one
@@ -499,7 +557,16 @@ such a file with the reason (`rel_under`). Do the same here: return a
 failure, never a made-up place. It is reachable with a published manifest
 whose release folders are not under its `library_root`.
 
-### F7. A list may name several files in one folder (S)
+### F7. A list may name several files in one folder (S) — **DONE 2026-11-21**
+
+**As built**, to the five decisions below: `only` is `[String: [URL]]` with
+one root per folder, `fileNames` captions each file by its own line (and
+`nameForFile` asks it first), a named file ignores the name filter, a bare
+folder line re-opens the folder, and a named file that is gone is counted as
+`missingNamed` rather than as an empty root. Checked against ndisc 0.8.1's
+first real label export through `NCOVER_LIST=… make test`, which had never
+had real data: 1 line, 0 skipped, and the job mapping right — Convert takes
+it, Cap and Square take nothing.
 
 **Where this is going.** The user's aim (2026-11-20): label artwork handled
 the same way as release covers, in both apps. Today a label is only
@@ -594,6 +661,39 @@ at 75% or 50% of the canvas, centred (`Placement::fit_at`), so a logo that
 runs to the edge gets a margin that + Background then fills. Port as two
 more framing actions next to Fit.
 
+### Convert — built HERE first, 2026-11-21
+
+The plan's own rule is that a *Not yet on either side* item is not built
+here first. This one was, on the user's word, and the reason is concrete:
+ndisc 0.8.1's first real label export is a single line asking for
+`ncover:convert`, so it was the one action in ndisc's vocabulary that no job
+answered, and the label loop could not close without it. GTK's backlog still
+has it as next after the write-back.
+
+`cover.png` → `cover.jpg` at quality 92 — `cap_format`'s own number — with
+not one pixel changed, taking the `ncover:convert` lines; a file already a
+JPEG is not converted. **Three decisions are new and travel back:**
+
+- **A transparent PNG is refused, not flattened.** ImageIO drops the channel
+  and keeps the RGB, which `Raster.load` has already zeroed, so a logo on a
+  transparent background would be written with black corners and no error
+  anywhere. A background is the editor's job, or Pad's.
+- **Only the files a run will write claim an output name.** Convert is the
+  only job whose output name differs from its source's, so a `cover.jpg`
+  left alone and a `cover.png` beside it both plan `cover.jpg`, and the real
+  work was refused as a clash with the no-op.
+- **Into the library is refused for it**, where Cap, Square and Pad are not:
+  replacing in place means writing `cover.jpg` *and removing* `cover.png`,
+  and `ncover-log.tsv` records one library file per swap with no way to say
+  "and this one went". **The open question to settle together** before
+  either app offers it: the log grows a column (both apps, one wave), or the
+  undo infers the original's name from the kept slot
+  (`dirname(lib) + basename(kept)`), which works but is inference.
+
+Also here now, and not in any phase: `wouldWrite` is the one question asked
+of a real file — what would this job write for it, or nothing — and the
+survey, the plan and the run all ask it.
+
 ## Not yet on either side
 
 1-1 means these are **not** built here first. If one is wanted sooner, say so
@@ -601,7 +701,7 @@ deliberately rather than drifting ahead:
 
 - ~~Write results into the library, keeping originals~~ — **built on GTK
   2026-11-20; see Phase F.**
-- **Convert (PNG → JPEG)**, for the `ncover:convert` lines.
+- ~~Convert (PNG → JPEG)~~ — **built here 2026-11-21; see above.**
 - **Dimension filters** beside the name filter (non-square by more than X%,
   long side over / under N px), joining the walk's selection so every count
   agrees with them.

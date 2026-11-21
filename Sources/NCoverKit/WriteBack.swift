@@ -23,7 +23,7 @@ import Foundation
 // - **The original's slot decides.** A file whose slot is already taken is
 //   refused: a second run must never overwrite the first original.
 // - **The place is the source's own**, its whole path under the scope's
-//   prefix (`placeUnder`, phase F4), so `Autechre/Amber/cover.jpg` and
+//   prefix (`placeUnder`, phase F6), so `Autechre/Amber/cover.jpg` and
 //   `Boards/Amber/cover.jpg` keep their originals in two different places. A
 //   file with no place is refused rather than given one.
 // - **Every swap is logged** in `ncover-log.tsv` in the originals folder, as

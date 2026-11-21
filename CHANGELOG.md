@@ -68,7 +68,7 @@ Their version numbers are independent.
   prefix or nothing (`placeUnder`): a root outside the prefix contributes no
   files at all and the survey says so ("1 release is outside the scope"), and
   the planner refuses a place that is not a plain relative path rather than
-  flattening a `..` or burying an absolute path under the output. Phase F4,
+  flattening a `..` or burying an absolute path under the output. Phase F6,
   the shape of the bug the GTK sibling found first.
 - **A list naming several files in one folder took only one of them.**
   ndisc's label Export list (0.8.1) is one line per label, every line

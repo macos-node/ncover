@@ -149,7 +149,7 @@ struct BatchTests {
                              under: strip) == "cover.png")
     }
 
-    // MARK: - a file's place (phase F4)
+    // MARK: - a file's place (phase F6)
 
     @Test func afileOutsideThePrefixHasNoPlaceAtAll() {
         let strip = URL(fileURLWithPath: "/music")
