@@ -8,6 +8,8 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-11-22
+
 ### Fixed
 - **Every row of a one-folder run was captioned by the folder.** A file
   sitting directly in the scope's own root has no folder under the scope to
