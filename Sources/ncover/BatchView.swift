@@ -87,16 +87,58 @@ struct BatchView: View {
                 }
 
                 Section("Where the results go") {
-                    LabeledContent("Output") {
-                        HStack {
-                            Text(run.outputFolder?.path(percentEncoded: false) ?? "—")
-                                .lineLimit(1).truncationMode(.head)
-                                .foregroundStyle(run.outputFolder == nil ? .tertiary : .primary)
-                            Spacer()
-                            Button("Choose…") { run.chooseOutput() }
+                    // Two equal choices, as the scope is. The second is the
+                    // one that touches someone's library, so everything about
+                    // it — its own folder, its own guard, a confirm, a red
+                    // Run — hangs off this one control.
+                    Picker("Output", selection: $run.output) {
+                        ForEach(BatchRunner.Output.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .tip("Either the results go to a folder of their own, or each cover is replaced where it lives with its original kept first. Into the library is Cap, Square and Pad only.")
+
+                    if run.output == .folder {
+                        LabeledContent("Output") {
+                            HStack {
+                                Text(run.outputFolder?.path(percentEncoded: false) ?? "—")
+                                    .lineLimit(1).truncationMode(.head)
+                                    .foregroundStyle(run.outputFolder == nil ? .tertiary : .primary)
+                                Spacer()
+                                Button("Choose…") { run.chooseOutput() }
+                            }
+                        }
+                        .tip("Never the source folder, and never inside it. To a folder does not write over your originals — not as an option, not with a confirmation.")
+                    } else {
+                        LabeledContent("Originals") {
+                            HStack {
+                                Text(run.originalsFolder?.path(percentEncoded: false) ?? "—")
+                                    .lineLimit(1).truncationMode(.head)
+                                    .foregroundStyle(run.originalsFolder == nil ? .tertiary : .primary)
+                                Spacer()
+                                Button("Choose…") { run.chooseOriginals() }
+                            }
+                        }
+                        .tip("The folder each replaced original is copied to, under the same path as in the library, with the log beside them. Not the library, inside it, or above it. Remembered.")
+                        if !run.recipe.job.keepsFile {
+                            // The same sentence `blocker` refuses with, so the
+                            // reason is here rather than only under the Run
+                            // button — the disc refusal's pattern.
+                            Text(WriteBackError.notAKeepFormatJob(run.recipe.job.name)
+                                .localizedDescription)
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        if let last = run.lastRunInfo {
+                            LabeledContent("Last run") {
+                                HStack {
+                                    Text("\(last.time) · \(last.swaps) cover\(last.swaps == 1 ? "" : "s")")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button("Put back last run") { run.askUndo() }
+                                }
+                            }
+                            .tip("Restore the originals of the most recent run into the library, newest first, from the log in the originals folder. A cover changed since that run is left as it is and named. Press again for the run before.")
                         }
                     }
-                    .tip("Never the source folder, and never inside it. Batch does not write over your originals — not as an option, not with a confirmation.")
 
                     Toggle("Dry run", isOn: $run.dryRun)
                         .tip("Render everything and write nothing. It still fails on a file that would really fail, so it tells you what a real run would do.")
@@ -112,9 +154,14 @@ struct BatchView: View {
                         Text("Cap").tag(BatchJob.cap)
                         Text("Square").tag(BatchJob.square)
                         Text("Pad").tag(BatchJob.pad(.edge))
+                        Text("Convert").tag(BatchJob.convert)
                     }
                     .pickerStyle(.segmented)
-                    .tip("Cover and Fit write a new square PNG. Cap, Square and Pad tidy each file in place — same name, same format — and write nothing at all for a file they would not change.")
+                    .tip("Cover and Fit write a new square PNG. Cap, Square and Pad tidy each file in place — same name, same format — and write nothing at all for a file they would not change. Convert re-encodes a PNG as a JPEG under the same stem, for ndisc's ncover:convert lines.")
+                    if run.recipe.job == .convert {
+                        Text("cover.png → cover.jpg at quality 92, not one pixel changed. A PNG with transparent areas is refused rather than stored as black: give it a background first, in the editor or with Pad.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if case .pad = run.job {
                         Picker("Bars", selection: $run.padFill) {
                             Text("Edge").tag(PadFill.edge)
@@ -191,6 +238,29 @@ struct BatchView: View {
         )) {
             Button("OK", role: .cancel) { run.error = nil }
         } message: { Text(run.error ?? "") }
+        // Replacing covers in the library asks, as Overwrite does. Cancel
+        // takes the cancel role so Esc and ⌘. both take the safe way out, and
+        // the destructive role is what makes the other button red on a Mac
+        // rather than a colour chosen here.
+        .alert(run.pendingLibraryRun?.title ?? "", isPresented: Binding(
+            get: { run.pendingLibraryRun != nil },
+            set: { if !$0 { run.pendingLibraryRun = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { run.pendingLibraryRun = nil }
+            Button("Replace", role: .destructive) {
+                run.pendingLibraryRun = nil
+                Task { await run.run(confirmed: true) }
+            }
+        } message: { Text(run.pendingLibraryRun?.detail ?? "") }
+        .alert(run.pendingUndo?.title ?? "", isPresented: Binding(
+            get: { run.pendingUndo != nil }, set: { if !$0 { run.pendingUndo = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { run.pendingUndo = nil }
+            Button("Put back", role: .destructive) {
+                run.pendingUndo = nil
+                Task { await run.putBackLastRun() }
+            }
+        } message: { Text(run.pendingUndo?.detail ?? "") }
     }
 
     /// The right pane: every file the run would touch, as a grid — or the
@@ -482,9 +552,16 @@ struct BatchView: View {
             if run.running {
                 Button("Stop") { run.cancel() }
             } else {
+                // Red while a press would replace covers in someone's
+                // library — the sibling's rule, in this app's terms: the
+                // prominent style is what carries a tint on a Mac, and the
+                // plain button is right for every other run.
+                let intoLibrary = run.output == .library && !run.dryRun
                 Button(runLabel) { Task { await run.run() } }
                     .keyboardShortcut(.defaultAction)
                     .disabled(run.blocker != nil)
+                    .buttonStyle(.borderedProminent)
+                    .tint(intoLibrary ? .red : .accentColor)
             }
         }
         .padding(14)

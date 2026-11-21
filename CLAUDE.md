@@ -243,6 +243,61 @@ backend changes.
   library; a sibling temp plus `replaceItemAt` cannot. A test stages the
   failure (a refused JPEG) and checks the original is byte-equal with no temp
   left behind.
+- **The write-back (`WriteBack.swift`) is the one place this app writes into
+  someone's library, and every rule in it is load-bearing.** Phase F1, the
+  GTK sibling's `writeback.rs` ported, reached from Batch's second Output —
+  *Into the library*. **Batch's rule is no longer "never writes over your
+  source": it is never over your source *without keeping the original*.** The
+  absolute rule still holds for *To a folder*, which is `guardBatch`; this
+  output is `guardOriginals`, a different pair of folders and a different
+  question.
+  - **Order, per file: copy the original into its slot, write the result over
+    the source, then log.** A copy and not a move, so the originals folder may
+    sit on another disk, and the library holds either the old file or the new
+    one at every moment — never neither.
+  - **A failure after the swap undoes the swap.** A swap the log does not know
+    about cannot be put back, so if the log line cannot be written (or the
+    file just written cannot be read back for its numbers) the original goes
+    straight back and the slot is freed. The error says whether that worked
+    and, if it did not, where the original is.
+  - **A taken slot is refused**, so a second run can never overwrite the first
+    original. The slot is the source's whole place under the scope's prefix
+    (`placeUnder`), which is what keeps two `Amber/cover.jpg` apart.
+  - **`pruneEmpty` uses `rmdir`, never `removeItem`.** It walks *upward*
+    through the user's originals folder, and `removeItem` deletes a folder
+    with everything in it. `rmdir` fails on a folder that still holds
+    anything, which is the whole point.
+  - **`fileStamp` is `lstat`, not `Date`.** The undo compares what the run
+    wrote against what is there now, and `Date` keeps nanoseconds since 1970
+    in a `Double`, which has no room for them. A symlink is not followed, so a
+    cover replaced by a link reads as changed — it is.
+  - **The undo skips a file that has changed since the run** and names it;
+    putting the original back over it would throw away a cover someone has
+    since replaced by hand. Its original stays kept, so nothing is lost by a
+    skip, and the run is marked undone either way.
+  - **The log is the GTK app's file, name and columns** (`ncover-log.tsv`).
+    One library, one originals folder, and either app may have written the run
+    being put back, so the columns are not ours to move. A test pins the
+    shape.
+  - **The confirm is the state, not a dialog the view owns.**
+    `run(confirmed:)` returns having set `pendingLibraryRun`, and the alert is
+    bound to it, so the question cannot be mislaid and the run cannot start
+    behind it. A dry run asks nothing, because it writes nothing.
+  - **A library run and an undo both cause the refresh that would clear their
+    own report**, which is what `holdResults` is for: the files have moved
+    under the grid, so the counts and the plan have to be re-read, and
+    throwing away the results of the thing that just happened is not part of
+    that. The covers just fixed then drop off a keep-format job's plan, which
+    is the recount the loop needs.
+  - **The framing refusal is shown where the choice is made and refused in
+    `blocker`, from one sentence** (`WriteBackError.notAKeepFormatJob`), as
+    the disc refusal is. A segmented control cannot grey out one segment on a
+    Mac, so this is the honest form of the sibling's greyed-out toggle rather
+    than a copy of it.
+  - **The originals folder is remembered in the store** under the sibling's
+    own key (`ColorData.originals`), and the runner does not own the store:
+    `ContentView` hands it `rememberOriginals`, and `adoptOriginals` loads the
+    remembered path without writing it straight back.
 - **Cover / Fit output is always PNG.** Not a preference — the disc / label
   mask needs an alpha channel. Cap, Square and Pad are the exception: they
   tidy a file rather than frame one, so they keep its format. **Save offers
@@ -528,6 +583,32 @@ backend changes.
   files that would fail is a preview that lies about what the run will do.
 - **Each result row carries its reason.** "31 failed" is unactionable and
   sends you guessing at the tool from the outside.
+- **Three predicates, not one, and they do not mean the same thing.**
+  `keepsName` is "the output has the source's stem" (everything but a
+  framing); `keepsFile` is the stronger "same name *and* same format" (Cap,
+  Square, Pad), which is what makes a file replaceable in place; `writes` is
+  the format the job names for itself, `nil` meaning "whatever the source
+  is". Convert keeps the name and not the file, which is why it plans like
+  the keep-format family, writes like a framing, and is refused into the
+  library.
+- **`wouldWrite` is the one question asked of a real file**, and the survey,
+  the plan and the run all ask it: what would this job write for this file,
+  or nothing. It is where Convert's "already a JPEG" lives, because that is a
+  question about the encoding that no size can answer. `wouldChange` is just
+  `wouldWrite != nil`.
+- **Convert refuses a transparent PNG; the keep-format jobs discard.** Both
+  are `BatchJob.alphaRule`, and the split is the point: Cap, Square and Pad
+  carry a JPEG's own RGB through and have no alpha to lose, while Convert is
+  handed a PNG, which is where transparency actually lives. Discarding there
+  writes black corners with no error — the same category of silent lie as a
+  dishonest `hasVectorForm`.
+- **Only a file the run would write claims an output name.** Convert is the
+  one job whose output name differs from its source's, so a `cover.jpg` left
+  alone and a `cover.png` beside it both plan `cover.jpg`, and the real work
+  gets refused as a clash with the no-op. The runner therefore plans
+  destinations for the files it will write and matches them back by position,
+  as it already does for places. For every other job a file left alone claims
+  the name it already holds, so nothing changes for them.
 - **The keep-format jobs are not framings, and must not become `Framing`
   cases.** Here `Framing` is the *editor's* placement intent — `resetFraming()`
   turns it into a `Placement` — and the canvas picker and the batch picker read
@@ -593,6 +674,13 @@ backend changes.
   folder usually holds back and inlay art too. A post-walk filter would let
   the survey and the run select different files, which is precisely the thing
   the survey exists to rule out.
+- **A list's mirror prefix is the deepest folder holding every line folder's
+  PARENT**, not the common ancestor of the folders themselves. For release
+  folders under two artists the two answers agree; for a list whose lines all
+  name one folder — ndisc's label export — the common ancestor *is* that
+  folder, so every place would be a bare filename, and an original would be
+  kept beside the log rather than under the folder it came from. Verified
+  against the first real label export (`NCOVER_LIST=… make test`).
 - **A root's named files are a list, not one file.** ndisc's label export is
   one line per label and every line points into the same folder of logos, so
   `only` is `[String: [URL]]` and `BatchScope.list` adds one root per folder

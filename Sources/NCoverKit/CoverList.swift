@@ -151,8 +151,17 @@ public func parseCoverList(_ text: String) -> CoverList {
                                    actions: actions))
     }
 
+    // The mirror prefix is the deepest folder that holds every line folder's
+    // PARENT, which is the GTK sibling's `common_parent` and not the obvious
+    // reading. It matters for a list whose lines share one folder — ndisc's
+    // label export is exactly that — where the common ancestor of the folders
+    // IS that folder, so every place would be a bare filename: no
+    // `reflection-labels/` in the output, and an original kept at
+    // `<originals>/peakoil.label.png` rather than under the folder it came
+    // from. One originals folder may hold runs from either app, so the two
+    // must agree about where a file's place is.
     return CoverList(lines: lines,
-                     root: commonAncestor(of: lines.map(\.folder)),
+                     root: commonAncestor(of: lines.map { $0.folder.deletingLastPathComponent() }),
                      hasActions: hasActions,
                      skipped: skipped)
 }

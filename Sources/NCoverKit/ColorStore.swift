@@ -50,11 +50,19 @@ public struct ColorData: Codable, Equatable, Sendable {
     /// repeated every launch.
     public var rail: Bool = false
     public var inspector: Bool = true
+    /// Where Batch keeps the originals it replaces in the library. Chosen
+    /// once and remembered, because it is the same folder every time and
+    /// choosing it again is the step someone would skip.
+    ///
+    /// The key name is the GTK sibling's `AppData.originals`, as `tips` is:
+    /// the two apps write their own files, and the *shape* is shared on
+    /// purpose.
+    public var originals: String?
 
     public init() {}
 
     private enum K: String, CodingKey {
-        case format, history, palettes, pinned, canvas, tips, rail, inspector
+        case format, history, palettes, pinned, canvas, tips, rail, inspector, originals
     }
 
     /// Every field optional on the way in. The file is shared with another app
@@ -70,6 +78,7 @@ public struct ColorData: Codable, Equatable, Sendable {
         tips = try c.decodeIfPresent(Bool.self, forKey: .tips) ?? true
         rail = try c.decodeIfPresent(Bool.self, forKey: .rail) ?? false
         inspector = try c.decodeIfPresent(Bool.self, forKey: .inspector) ?? true
+        originals = try c.decodeIfPresent(String.self, forKey: .originals)
     }
 }
 

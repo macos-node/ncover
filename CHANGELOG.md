@@ -8,7 +8,57 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Added
+- **Convert**, a sixth job: a PNG re-encoded as a JPEG under the same stem —
+  `cover.png` → `cover.jpg`, quality 92, not one pixel changed. It takes
+  ndisc's `ncover:convert` lines, the last action in its vocabulary that no
+  job answered, and a file already a JPEG is not converted (so a Convert run
+  over a library writes only the PNGs, and says how many that is).
+  - **A PNG with transparent areas is refused**, not flattened: a dropped
+    alpha channel is stored as black with no error from any layer, and a logo
+    on a transparent background is exactly what gets flagged. Give it a
+    background first — in the editor, or with Pad.
+  - A disc and Convert are refused together, for the same reason Cap, Square
+    and Pad refuse one: a JPEG has nowhere to put transparent corners.
+  - **Into the library is refused** for it, where Cap, Square and Pad are not:
+    Convert writes a new file beside the old one, so the release would hold
+    two covers and ndisc would still point at the PNG.
+  - Built here before the GTK sibling has it, deliberately and recorded as
+    such in the parity plan.
+- **Batch can write into the library, keeping the originals.** A second
+  Output beside *To a folder* — **Into the library** — for Cap, Square and
+  Pad: each cover is replaced where it is, in its own name and format, so
+  ndisc still finds it. Its original is copied first into an originals folder
+  you choose (remembered), at the same path as in the library, and every swap
+  is logged there in `ncover-log.tsv`. The run asks first, and Run is red
+  while this output is on.
+  - A cover whose original is already kept is refused, so a second run can
+    never overwrite the first original.
+  - The library always holds either the old file or the new one: the result is
+    written beside it and renamed over it, and only once the original's copy
+    is safe. A swap the log cannot record is undone rather than left.
+  - **Put back last run** restores the newest run's originals, newest first. A
+    cover changed since that run is left as it is and named, with its original
+    still kept. Press again for the run before.
+  - The originals folder may not be the library, inside it, or above it.
+  - Cover and Fit cannot go into the library: they write a PNG under another
+    name, which would leave ndisc pointing at the old file.
+  - Batch recounts afterwards, so the covers just fixed drop off the grid, and
+    the run's results stay on screen.
+
+  This is step 3 of the cover review loop, and the last step either app was
+  missing. It is a port of the GTK sibling's 0.5.0, down to the log's own
+  columns — one originals folder may hold runs from either app.
+
 ### Fixed
+- **A one-folder list mirrored to bare filenames.** The prefix a list's
+  output mirrors under is now the deepest folder holding every line folder's
+  *parent*, as the GTK sibling has always had it. It only shows where the
+  lines share a folder — ndisc's label export is exactly that — and there it
+  is the difference between `reflection-labels/peakoil.label.png` and a loose
+  `peakoil.label.png` in the top of the output, and between an original kept
+  under the folder it came from and one kept beside the log. The two apps may
+  share an originals folder, so they have to agree where a file's place is.
 - **A file outside the scope's own folder was given a name of its own
   instead of being refused.** The path a run mirrors fell back to the file's
   bare filename when it sat outside the scope's prefix — so every such file

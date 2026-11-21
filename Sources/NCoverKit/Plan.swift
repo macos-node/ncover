@@ -83,22 +83,21 @@ func nameForFile(_ url: URL, in scope: BatchScope) -> String {
 public func planItems(files: [URL], scope: BatchScope, recipe r: Recipe) -> [PlanItem] {
     var rows: [(url: URL, from: PixelSize?, to: PixelSize?)] = []
     for f in files {
-        let from = imageSize(of: f).map(PixelSize.init)
-        let to: PixelSize?
-        if r.job.keepsFile {
-            guard let from else { continue }   // no pixel size: nothing to tidy
-            guard let want = jobResultSize(width: from.width, height: from.height,
-                                           job: r.job, canvas: r.canvas) else { continue }
-            to = PixelSize(want)
-        } else {
-            to = PixelSize(width: r.canvas, height: r.canvas)
-        }
-        rows.append((f, from, to))
+        // One question, asked of the file itself: what would this run write
+        // for it? `nil` is "nothing", and a file the run would not write is
+        // not in the plan — which is what makes the plan's length the Run
+        // button's count.
+        guard let want = wouldWrite(f, job: r.job, canvas: r.canvas) else { continue }
+        rows.append((f, imageSize(of: f).map(PixelSize.init), PixelSize(want)))
     }
 
     switch r.job {
     case .cap:
         rows.sort { ($0.from?.long ?? 0, $0.url.path) > ($1.from?.long ?? 0, $1.url.path) }
+    case .convert:
+        // Nothing to triage: every line is the same piece of work, so the
+        // order the run goes in is the order to read.
+        rows.sort { $0.url.path < $1.url.path }
     case .square, .pad:
         rows.sort {
             let a = $0.from?.offSquare ?? 0, b = $1.from?.offSquare ?? 0

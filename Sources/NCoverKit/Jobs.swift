@@ -36,15 +36,54 @@ public enum BatchJob: Equatable, Hashable, Sendable {
     case square
     /// Square a non-square image the other way: bars rather than a crop.
     case pad(PadFill)
+    /// Re-encode a PNG as a JPEG under the same stem — `cover.png` →
+    /// `cover.jpg`. Not one pixel changes; the encoder is the whole job.
+    ///
+    /// ndisc asks for this with `ncover:convert`, for a cover or a label
+    /// image published as a PNG where the library's shape is JPEG.
+    case convert
 
     /// Does this job keep the file's own name, extension and format?
     ///
     /// The predicate the write path and the destination planner read. A job
     /// that keeps the file also writes nothing when it would change nothing.
     public var keepsFile: Bool {
+        switch self {
+        case .cap, .square, .pad: return true
+        case .frame, .convert:    return false
+        }
+    }
+
+    /// Does the output keep the source's own name, whatever its extension?
+    ///
+    /// True for everything but a framing, which writes `<stem>.png` (or
+    /// `<stem>-disc.png`) onto its own canvas. Convert keeps the stem and
+    /// takes a new extension, which is exactly why it is not `keepsFile`:
+    /// the file it writes is not the file it read.
+    public var keepsName: Bool {
         if case .frame = self { return false }
         return true
     }
+
+    /// What this job writes each file as. `nil` means "whatever the source
+    /// already is", which is the keep-format jobs' whole point.
+    public var writes: ImageFormat? {
+        switch self {
+        case .frame:              return .png
+        case .cap, .square, .pad: return nil
+        case .convert:            return .jpeg
+        }
+    }
+
+    /// What to do when the destination cannot hold the source's alpha.
+    ///
+    /// **Convert is the one job that must refuse.** Cap, Square and Pad carry
+    /// a JPEG's own RGB through, so there is no alpha to lose; a framing
+    /// writes PNG. Convert is handed a PNG, which is where transparency
+    /// actually lives — a label logo on a transparent background is the usual
+    /// case — and discarding it stores those pixels as **black**, with no
+    /// error from any layer. So it refuses, and says what to do instead.
+    public var alphaRule: JPEGAlpha { self == .convert ? .refuse : .discard }
 
     /// Which of ndisc's `ncover:` actions this job acts on, for a list scope.
     ///
@@ -56,6 +95,7 @@ public enum BatchJob: Equatable, Hashable, Sendable {
         case .frame:            return nil
         case .cap:              return "ncover:cap"
         case .square, .pad:     return "ncover:square"
+        case .convert:          return "ncover:convert"
         }
     }
 
@@ -66,19 +106,24 @@ public enum BatchJob: Equatable, Hashable, Sendable {
         case .cap:           return "Cap"
         case .square:        return "Square"
         case .pad:           return "Pad"
+        case .convert:       return "Convert"
         }
     }
 }
 
 /// Why a job and a disc cannot run together, in words. `nil` when they can.
 ///
-/// A job that keeps the file's format has nowhere to put a disc's transparent
-/// corners: the file is a JPEG as often as not, and a JPEG has no alpha. The
-/// GTK sibling refuses the same combination rather than quietly dropping one
-/// of the two choices.
+/// A job that does not write a PNG has nowhere to put a disc's transparent
+/// corners: Cap, Square and Pad keep the file's own format, which is a JPEG as
+/// often as not, and Convert writes a JPEG by definition. The GTK sibling
+/// refuses the same combination rather than quietly dropping one of the two
+/// choices.
 public func jobRefusal(job: BatchJob, disc: Bool) -> String? {
-    guard disc, job.keepsFile else { return nil }
-    return "\(job.name) keeps each file's own format, which has no room for a disc's transparent corners. Turn the disc off to \(job.name.lowercased())."
+    guard disc, job.writes != .png else { return nil }
+    let what = job == .convert
+        ? "Convert writes a JPEG, which has no room for"
+        : "\(job.name) keeps each file's own format, which has no room for"
+    return "\(what) a disc's transparent corners. Turn the disc off to \(job.name.lowercased())."
 }
 
 /// The size an image shrinks to under `cap`, or `nil` if it is already within
@@ -200,6 +245,11 @@ public func jobResultSize(width w: Int, height h: Int,
     switch job {
     case .frame:
         return (canvas, canvas)
+    case .convert:
+        // Convert changes the encoding and not one pixel. Whether it writes
+        // at all is a question about the file's format, which a size cannot
+        // answer — `wouldWrite` is where that is decided.
+        return (w, h)
     case .cap:
         return capSize(w, h, cap: canvas)
     case .square:
@@ -213,13 +263,31 @@ public func jobResultSize(width w: Int, height h: Int,
     }
 }
 
-/// Would a run of `job` rewrite the file at `url`? From its header alone, so a
+/// What a run of `job` would write for the file at `url`, or `nil` when it
+/// would leave it alone.
+///
+/// **The one answer the survey, the plan and the run share**, and the only
+/// place a job's decision meets a real file. From the header alone, so a
 /// library-scale survey decodes nothing. A file with no readable pixel size
-/// (an SVG, something that is not an image) is left alone.
+/// (an SVG, something that is not an image) has nothing to tidy and is left
+/// alone — but a framing still writes it, since it renders onto its own
+/// canvas and a vector has one.
+public func wouldWrite(_ url: URL, job: BatchJob, canvas: Int) -> (width: Int, height: Int)? {
+    if case .frame = job { return (canvas, canvas) }
+    guard let s = imageSize(of: url) else { return nil }
+    if job == .convert {
+        // A file already in the format Convert writes is not converted: it is
+        // the same rule as "writes nothing for a file it would not change",
+        // asked of the encoding rather than the shape.
+        guard ImageFormat.of(url) == .png else { return nil }
+        return (s.width, s.height)
+    }
+    return jobResultSize(width: s.width, height: s.height, job: job, canvas: canvas)
+}
+
+/// Would a run of `job` rewrite the file at `url`?
 public func wouldChange(_ url: URL, job: BatchJob, canvas: Int) -> Bool {
-    guard job.keepsFile else { return true }
-    guard let s = imageSize(of: url) else { return false }
-    return jobResultSize(width: s.width, height: s.height, job: job, canvas: canvas) != nil
+    wouldWrite(url, job: job, canvas: canvas) != nil
 }
 
 /// Run one keep-format job over a decoded source. `nil` means "left alone".
@@ -229,6 +297,8 @@ public func jobRender(_ src: Raster, job: BatchJob, canvas: Int) -> Raster? {
     switch job {
     case .frame:
         return nil     // framings go through `render`; this function is the other family
+    case .convert:
+        return src     // not one pixel changes; the encoder is the whole job
     case .cap:
         return areaResample(src, width: want.width, height: want.height)
     case .square:
@@ -270,6 +340,10 @@ public func sizeChangeInWords(from: (width: Int, height: Int),
         let add = long - short
         let side = from.width > from.height ? "top and bottom" : "left and right"
         return "\(head) · \(add) px added \(side)"
+    case .convert:
+        // The sizes are equal by definition, so saying them twice tells you
+        // nothing about what the run would do to this file.
+        return "\(from.width) × \(from.height) · PNG → JPEG"
     case .cap, .frame:
         return head
     }

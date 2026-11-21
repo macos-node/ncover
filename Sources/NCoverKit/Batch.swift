@@ -335,6 +335,20 @@ public func placeUnder(_ hit: URL, strip: URL) -> String? {
     return rel.joined(separator: "/")
 }
 
+/// Is this a place a file may be written at, relative to some root?
+///
+/// One rule, asked by everything that turns a place into a path: the batch
+/// planner and the write-back's originals folder. Empty, absolute, or holding
+/// `.` or `..` is refused — `batchDest` and `keepDest` build their path by
+/// *skipping* those components, which flattens a bad place into a plausible
+/// one, and an originals slot computed from one could escape the folder it
+/// was promised to.
+public func isPlainPlace(_ place: String) -> Bool {
+    guard !place.isEmpty, !place.hasPrefix("/") else { return false }
+    return !place.split(separator: "/", omittingEmptySubsequences: false)
+        .contains { $0 == "." || $0 == ".." || $0.isEmpty }
+}
+
 /// Is this root somewhere the scope can place what it finds?
 ///
 /// A root is placeable when it *is* the prefix (a folder scope, where the two
@@ -427,25 +441,33 @@ public func surveyBatch(_ scope: BatchScope, needle: String) -> BatchSurvey {
                        rootsWithNoPlace: noPlace)
 }
 
-/// Where one source lands under a **keep-format** job: the same name, the same
-/// extension, mirrored under the output root.
+/// Where one source lands when the job keeps its **name**: the same stem,
+/// mirrored under the output root, with `ext` for its extension or the
+/// source's own when that is `nil`.
 ///
-/// Cap, Square and Pad tidy a file; a tidied `cover.jpg` is still `cover.jpg`.
-/// Which also means two sources in one folder cannot plan the same output the
+/// Cap, Square and Pad tidy a file; a tidied `cover.jpg` is still `cover.jpg`,
+/// which also means two sources in one folder cannot plan the same output the
 /// way the PNG family can — they differ by the very extension they keep.
-public func keepDest(rel: String, outRoot: URL) -> URL {
+/// Convert is the exception and the reason this takes an extension at all:
+/// `cover.png` becomes `cover.jpg`, so a folder holding both **can** plan one
+/// output twice. Nothing disambiguates that — the clash check refuses it — and
+/// the run keeps it from arising by never planning a file it would not write.
+public func keepDest(rel: String, outRoot: URL, ext: String? = nil) -> URL {
     var parts = rel.split(separator: "/").map(String.init)
     let file = parts.popLast() ?? "image"
     var p = outRoot
     for part in parts where part != "." && part != ".." { p.appendPathComponent(part) }
-    return p.appendingPathComponent(file)
+    guard let ext else { return p.appendingPathComponent(file) }
+    return p.appendingPathComponent((file as NSString).deletingPathExtension + "." + ext)
 }
 
 /// What format a run writes this destination as, or a refusal naming the
 /// extension. WebP and GIF are refused rather than quietly turned into a PNG
 /// under a name that says otherwise — the GTK sibling's `cap_format` rule.
 public func batchWriteFormat(dest: URL, job: BatchJob) throws -> ImageFormat {
-    guard job.keepsFile else { return .png }
+    // A job that names its own format answers for itself; only the ones that
+    // keep the source's have to read the name they are about to write.
+    if let f = job.writes { return f }
     guard let f = ImageFormat.of(dest) else {
         let ext = dest.pathExtension.lowercased()
         throw BatchError.keepFormatUnsupported(ext.isEmpty ? "(none)" : ext)
@@ -491,23 +513,16 @@ public func batchDest(rel: String, outRoot: URL, disc: Bool) -> URL {
 /// The order matches `rels`, so a caller can zip it back onto its hits.
 public func planDests(rels: [String], outRoot: URL, job: BatchJob,
                       disc: Bool) -> [Result<URL, BatchError>] {
-    // Belt and braces for the place itself. `batchDest` and `keepDest` build
-    // their path by skipping `.` and `..` components, which flattens a bad
-    // place into a plausible one instead of refusing it — and an absolute
-    // place is worse still, since `appendingPathComponent` would bury it
-    // under the output root under a name nobody chose. Whoever computed these
-    // should have used `placeUnder`; if they did, this cannot fire.
-    let bad = { (rel: String) in
-        rel.isEmpty || rel.hasPrefix("/")
-            || rel.split(separator: "/", omittingEmptySubsequences: false)
-                  .contains { $0 == "." || $0 == ".." || $0.isEmpty }
-    }
+    // Belt and braces for the place itself, by the one rule `isPlainPlace`
+    // holds. Whoever computed these should have used `placeUnder`; if they
+    // did, this cannot fire.
+    let bad = { !isPlainPlace($0) }
     // A keep-format job's names are unique by construction — each output IS
     // its source's name — so the disambiguation below has nothing to do. The
     // clash check still runs: it costs one dictionary and it is the thing that
     // would notice if that reasoning ever stopped being true.
-    let plain = job.keepsFile
-        ? rels.map { keepDest(rel: $0, outRoot: outRoot) }
+    let plain = job.keepsName
+        ? rels.map { keepDest(rel: $0, outRoot: outRoot, ext: job.writes.map { $0 == .jpeg ? "jpg" : "png" }) }
         : rels.map { batchDest(rel: $0, outRoot: outRoot, disc: disc) }
     var uses: [String: Int] = [:]
     for (rel, p) in zip(rels, plain) where !bad(rel) { uses[p.path, default: 0] += 1 }
@@ -520,7 +535,7 @@ public func planDests(rels: [String], outRoot: URL, job: BatchJob,
     for (rel, p) in zip(rels, plain) {
         guard !bad(rel) else { out.append(.failure(.noPlace(rel))); continue }
         var dest = p
-        if !job.keepsFile, uses[p.path, default: 0] > 1 {
+        if !job.keepsName, uses[p.path, default: 0] > 1 {
             let file = rel.split(separator: "/").last.map(String.init) ?? rel
             let stem = (file as NSString).deletingPathExtension
             let ext = (file as NSString).pathExtension.lowercased()
@@ -554,7 +569,6 @@ public func planDests(rels: [String], outRoot: URL, job: BatchJob,
 /// a caller that treats `nil` as a failure is reporting a lie.
 public func batchRender(_ src: Raster, recipe r: Recipe) throws -> Raster? {
     guard src.width > 0, src.height > 0 else { throw BatchError.emptyImage }
-    return r.job.keepsFile
-        ? jobRender(src, job: r.job, canvas: r.canvas)
-        : render(src, recipe: r)
+    if case .frame = r.job { return render(src, recipe: r) }
+    return jobRender(src, job: r.job, canvas: r.canvas)
 }

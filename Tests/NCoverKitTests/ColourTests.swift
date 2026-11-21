@@ -311,11 +311,16 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(d.inspector)
         XCTAssertFalse(d.rail)
 
+        XCTAssertNil(d.originals, "no originals folder until one is chosen")
+
         d.tips = false; d.rail = true; d.inspector = false
+        d.originals = "/Volumes/Backup/ncover originals"
         let back = try JSONDecoder().decode(ColorData.self, from: try JSONEncoder().encode(d))
         XCTAssertFalse(back.tips)
         XCTAssertTrue(back.rail)
         XCTAssertFalse(back.inspector)
+        XCTAssertEqual(back.originals, "/Volumes/Backup/ncover originals",
+                       "the originals folder is chosen once and remembered")
     }
 
     func testAFileWrittenBeforeTheseKeysExistedStillLoads() throws {
@@ -328,6 +333,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(d.tips)
         XCTAssertTrue(d.inspector)
         XCTAssertFalse(d.rail)
+        XCTAssertNil(d.originals)
         XCTAssertEqual(d.canvas, 400)
     }
 }

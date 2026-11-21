@@ -142,6 +142,8 @@ struct CoverListTests {
             """)
         let scope = try BatchScope.list(l, job: .square)
         #expect(scope.roots.map(\.lastPathComponent) == ["Amber", "Geogaddi"])
+        // The deepest folder holding every line folder's PARENT: here the
+        // releases sit under two artists, so it is the library itself.
         #expect(scope.strip.path == "/lib")
         #expect(scope.guardRoot.path == "/lib", "the guard protects the whole library")
         #expect(scope.names["/lib/Autechre/Amber"] == "Autechre — Amber")
@@ -233,6 +235,14 @@ struct CoverListTests {
                                 line("Gone.label.jpg", "Gone")].joined(separator: "\n"))
         let scope = try BatchScope.list(l, job: .square)
         #expect(scope.roots.map(\.path) == [logos.path], "one folder is one root")
+        // Every line names the same folder, so the prefix is its PARENT and a
+        // place keeps the folder's own name — `labels/Warp.label.png`, not a
+        // bare filename in the top of the output. The sibling mirrors it the
+        // same way, and they share an originals folder.
+        #expect(scope.strip.path == base.standardizedFileURL.path)
+        #expect(findImages(in: scope, needle: "").map { placeUnder($0, strip: scope.strip) }
+                == ["labels/Mute.label.jpg", "labels/Ultra.Records.label.jpg",
+                    "labels/Warp.label.png"])
         #expect(scope.names.isEmpty, "a shared folder carries no one line's name")
         #expect(scope.only[logos.standardizedFileURL.path]?.count == 4)
 
@@ -330,7 +340,8 @@ struct CoverListTests {
             \(l.lines.count) releases · \(l.skipped.count) skipped · \
             actions: \(l.hasActions) · root \(l.root?.path ?? "—")
             square: \(l.lines.filter { l.selects($0, job: .square) }.count) · \
-            cap: \(l.lines.filter { l.selects($0, job: .cap) }.count)
+            cap: \(l.lines.filter { l.selects($0, job: .cap) }.count) · \
+            convert: \(l.lines.filter { l.selects($0, job: .convert) }.count)
             not in a Square run: \(l.leftOut(job: .square))
             """)
         try #require(!l.lines.isEmpty)
@@ -338,7 +349,7 @@ struct CoverListTests {
         // The whole chain the Batch pane walks: list → scope → files → plan.
         // Each number is one the app shows somewhere, so a disagreement here
         // is a disagreement on screen.
-        for job in [BatchJob.frame(.cover), .cap, .square] {
+        for job in [BatchJob.frame(.cover), .cap, .square, .convert] {
             guard let scope = try? BatchScope.list(l, job: job) else {
                 print("  \(job.name): no scope — no line is for this job"); continue
             }

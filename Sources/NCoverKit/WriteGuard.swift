@@ -12,7 +12,7 @@ public enum WriteGuardError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .outputIsSource:
-            return "The output folder is the source folder. Batch never writes over your originals."
+            return "The output folder is the source folder. To a folder never writes over your originals."
         case .outputInsideSource:
             return "The output folder is inside the source folder. The next run would batch its own output."
         case .sourceInsideOutput:
@@ -28,10 +28,16 @@ public enum WriteGuardError: LocalizedError, Equatable {
 /// Refuse a source/output pairing that would eat itself.
 ///
 /// Inherited verbatim from the GTK app, and non-negotiable: the output folder
-/// is a user-typed path and the originals are the irreplaceable thing. Never
-/// writes into the source tree — not as an option, not with a confirmation. Also
-/// refuses output nested INSIDE the source, which would not overwrite anything
-/// but would make the next run batch its own output.
+/// is a user-typed path and the originals are the irreplaceable thing. The
+/// *To a folder* output never writes into the source tree — not as an option,
+/// not with a confirmation. Also refuses output nested INSIDE the source,
+/// which would not overwrite anything but would make the next run batch its
+/// own output.
+///
+/// Batch's other output replaces each cover where it lives, and its rule is
+/// the narrower one: never over the source **without keeping the original**.
+/// That is `guardOriginals` in `WriteBack.swift`, a different pair of folders
+/// and a different question — do not merge the two.
 public func guardBatch(source: URL, output: URL) throws {
     let real = { (u: URL) -> URL in
         URL(fileURLWithPath: (u.path as NSString).standardizingPath).resolvingSymlinksInPath()

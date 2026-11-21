@@ -38,6 +38,26 @@ final class BatchRunner: ObservableObject {
         }
     }
 
+    /// Where the results go.
+    ///
+    /// Two equal choices, as the scope is: a folder of their own, or the
+    /// library itself with every original kept first. The second is Cap,
+    /// Square and Pad only — step 3 of the cover review loop.
+    enum Output: String, CaseIterable, Identifiable {
+        case folder, library
+        var id: String { rawValue }
+        var label: String {
+            self == .folder ? "To a folder" : "Into the library"
+        }
+    }
+
+    /// Something to confirm before it happens, and what it says.
+    struct Ask: Identifiable, Equatable {
+        let id = UUID()
+        let title: String
+        let detail: String
+    }
+
     struct Row: Identifiable {
         let id = UUID()
         let rel: String
@@ -69,6 +89,26 @@ final class BatchRunner: ObservableObject {
     @Published private(set) var listPath: URL?
     @Published private(set) var coverList: CoverList?
     @Published var outputFolder: URL?
+    @Published var output: Output = .folder { didSet { refreshLastRun() } }
+    /// Where the originals of a library run are kept. Remembered in the
+    /// store, which this runner does not own — `rememberOriginals` is how it
+    /// writes it, handed over by `ContentView`.
+    @Published var originalsFolder: URL? {
+        didSet {
+            guard originalsFolder != oldValue else { return }
+            rememberOriginals?(originalsFolder)
+            refreshLastRun()
+        }
+    }
+    /// Set by `ContentView`: how to remember the originals folder.
+    var rememberOriginals: ((URL?) -> Void)?
+    /// Load the remembered folder without writing it straight back.
+    func adoptOriginals(_ url: URL?) {
+        let remember = rememberOriginals
+        rememberOriginals = nil
+        originalsFolder = url
+        rememberOriginals = remember
+    }
     @Published var needle = ""
     @Published var canvas = CANVAS_DEFAULT
     @Published var job: BatchJob = .frame(.cover)
@@ -100,6 +140,25 @@ final class BatchRunner: ObservableObject {
     /// What the current scope and filter select, kept current while you type.
     /// `nil` until the first survey lands; the walk is cheap but not free.
     @Published private(set) var survey: BatchSurvey?
+
+    /// The most recent run into the library not yet put back, read from the
+    /// log in the originals folder. `nil` when there is none, which is also
+    /// what hides *Put back last run*.
+    @Published private(set) var lastRunInfo: (run: String, time: String, swaps: Int)?
+    /// Replacing covers in the library asks first, and this is the question.
+    @Published var pendingLibraryRun: Ask?
+    /// So does putting a run back.
+    @Published var pendingUndo: Ask?
+    /// What putting a run back did, for the footer. Its own line because it
+    /// is not a run: nothing was rendered and nothing was written anew.
+    @Published private(set) var undoNote: String?
+    /// Keep the results through the next survey refresh.
+    ///
+    /// A refresh clears them, which is right when the recipe changes — but a
+    /// library run and an undo both *cause* a refresh (the files on disk have
+    /// moved under the grid), and throwing away the report of the thing that
+    /// just happened is not.
+    private var holdResults = false
 
     /// How many of those files a keep-format job would actually rewrite.
     /// `nil` for a framing, which reframes every one of them, and before the
@@ -192,13 +251,41 @@ final class BatchRunner: ObservableObject {
                 return "ndisc has not exported a manifest, so there is nothing published to batch over."
             }
         }
-        guard let out = outputFolder else { return "Choose an output folder." }
-        do {
-            try guardBatch(source: try currentScope().guardRoot, output: out)
-        } catch {
-            return error.localizedDescription
+        switch output {
+        case .folder:
+            guard let out = outputFolder else { return "Choose an output folder." }
+            do {
+                try guardBatch(source: try currentScope().guardRoot, output: out)
+            } catch {
+                return error.localizedDescription
+            }
+        case .library:
+            // Shown in the section as well as refused here, as the disc
+            // refusal is: the two read the same sentence, so they cannot
+            // disagree about why Run will not go.
+            if !recipe.job.keepsFile {
+                return WriteBackError.notAKeepFormatJob(recipe.job.name).localizedDescription
+            }
+            guard let kept = originalsFolder else {
+                return "Choose the folder the originals are kept in."
+            }
+            do {
+                try guardOriginals(library: try currentScope().guardRoot, kept: kept)
+            } catch {
+                return error.localizedDescription
+            }
         }
         return nil
+    }
+
+    /// The most recent run in the originals folder, re-read.
+    ///
+    /// One small text file, so it is read whenever the answer could have
+    /// changed — the folder, the output, the end of a run — rather than
+    /// cached and trusted.
+    func refreshLastRun() {
+        guard output == .library, let kept = originalsFolder else { lastRunInfo = nil; return }
+        lastRunInfo = try? lastRun(in: kept)
     }
 
     func currentScope() throws -> BatchScope {
@@ -261,9 +348,15 @@ final class BatchRunner: ObservableObject {
             let files = findImages(in: scope, needle: needle)
             // The change count is taken over the RUN's own file list, so
             // "245 of 2,377" cannot be a count of something else.
-            let changes: Int? = r.job.keepsFile
-                ? files.filter { wouldChange($0, job: r.job, canvas: r.canvas) }.count
-                : nil
+            // Every job but a framing writes only some of what it looked at,
+            // Convert included: a file that is already a JPEG is not one it
+            // would convert.
+            let changes: Int?
+            if case .frame = r.job {
+                changes = nil
+            } else {
+                changes = files.filter { wouldChange($0, job: r.job, canvas: r.canvas) }.count
+            }
             let plan = planItems(files: files, scope: scope, recipe: r)
             return (survey, changes, plan)
         }.value
@@ -282,8 +375,11 @@ final class BatchRunner: ObservableObject {
         // more, and it reads as a claim about this one.
         total = 0; done = 0; ok = 0; failed = 0; skipped = 0; stopped = false
         // The last run's results describe a recipe that is no longer on
-        // screen. Clearing them is also what puts the grid back in the pane.
-        rows = []
+        // screen. Clearing them is also what puts the grid back in the pane —
+        // except when the refresh is the consequence of the run itself, which
+        // is `holdResults`.
+        if holdResults { holdResults = false } else { rows = []; undoNote = nil }
+        refreshLastRun()
         if let sel = selected, !plan.contains(where: { $0.id == sel }) { selected = nil }
         trace("scope \(scope.roots.count) roots · survey \(result.0.total) · plan \(plan.count)")
     }
@@ -433,6 +529,12 @@ final class BatchRunner: ObservableObject {
         }
     }
 
+    func chooseOriginals() {
+        if let u = pickFolder("Choose where the originals of the covers this run replaces are kept — not inside the library") {
+            originalsFolder = u
+        }
+    }
+
     private func pickFolder(_ message: String) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -444,76 +546,227 @@ final class BatchRunner: ObservableObject {
 
     // MARK: - the run
 
-    func run() async {
-        guard blocker == nil, let out = outputFolder else { error = blocker; return }
+    /// Run the recipe. `confirmed` is the answer to `pendingLibraryRun`.
+    ///
+    /// Into the library, a real run **asks first** and this returns without
+    /// doing anything: the question is the state, so the alert cannot be
+    /// mislaid and the run cannot start behind it. A dry run asks nothing,
+    /// because it writes nothing.
+    func run(confirmed: Bool = false) async {
+        guard blocker == nil else { error = blocker; return }
+        if output == .library, !dryRun, !confirmed { askLibraryRun(); return }
         reset()
         running = true
         defer { running = false; stopped = cancelled }
         do {
             let s = try currentScope()
             // Checked again here, not just in `blocker`: the folders are
-            // user-typed paths and could have moved since the sheet opened.
-            try guardBatch(source: s.guardRoot, output: out)
+            // user-typed paths and could have moved since the view opened.
             let hits = findImages(in: s, needle: needle)
             total = hits.count
-            let r = recipe
-            let dry = dryRun
-            // Planned for the whole run, not file by file: two covers in one
-            // release would otherwise plan the same output and the second
-            // would replace the first, both reported as written.
-            // A file's PLACE is its whole path under the scope's prefix, and
-            // a file that has none is refused rather than given a name of its
-            // own in the output root — where every such file would land on
-            // the next one. The scope already drops a root it cannot place,
-            // so this is the second lock on the same door.
-            let places = hits.map { placeUnder($0, strip: s.strip) }
-            // Planned over the placeable files and matched back by position,
-            // never looked up by name.
-            var queue = planDests(rels: places.compactMap { $0 }, outRoot: out,
-                                  job: r.job, disc: r.disc != nil).makeIterator()
-            let plan: [Result<URL, BatchError>] = zip(hits, places).map { hit, place in
-                guard place != nil, let next = queue.next() else {
-                    return .failure(.noPlace(hit.path))
-                }
-                return next
+            switch output {
+            case .folder:
+                guard let out = outputFolder else { return }
+                try guardBatch(source: s.guardRoot, output: out)
+                await writeToFolder(hits, scope: s, out: out)
+            case .library:
+                guard let kept = originalsFolder else { return }
+                try guardOriginals(library: s.guardRoot, kept: kept)
+                try await writeIntoLibrary(hits, scope: s, kept: kept)
             }
-            // What each row is called is a display question, and the answer
-            // for a file with no place is its own name.
-            let rels = hits.map { relativePath(of: $0, under: s.strip) }
+        } catch {
+            self.error = error.localizedDescription
+        }
+        // The library has changed under the grid: a keep-format job's plan is
+        // the files it would change, and the ones just fixed are not among
+        // them any more. The results stay on screen through it.
+        if output == .library, !dryRun, ok > 0 {
+            holdResults = true
+            await refreshSurvey()
+        }
+    }
 
-            for ((hit, rel), planned) in zip(zip(hits, rels), plan) {
-                if cancelled { break }
-                do {
-                    let dest = try planned.get()
-                    // The format is settled before the render, so a file this
-                    // app cannot write is reported as left-as-it-is rather
-                    // than decoded and then refused.
-                    let format = try batchWriteFormat(dest: dest, job: r.job)
-                    guard let rendered = try await renderOne(hit, recipe: r) else {
-                        skipped += 1
-                        record(Row(rel: rel,
-                                   outcome: .skipped("\(r.job.name) would not change it")))
-                        done += 1
-                        continue
-                    }
-                    if !dry {
-                        try FileManager.default.createDirectory(
-                            at: dest.deletingLastPathComponent(),
-                            withIntermediateDirectories: true)
-                        // A keep-format job carries a JPEG's own RGB through,
-                        // so there is no alpha to lose and nothing to refuse;
-                        // the framings write PNG and keep theirs.
-                        try rendered.write(to: dest, as: format, alpha: .discard)
-                    }
-                    ok += 1
-                    record(Row(rel: rel, outcome: .wrote(dest.path)))
-                } catch {
-                    failed += 1
-                    // Carry the REASON. "31 failed" is unactionable and sends
-                    // you guessing at the tool from the outside.
-                    record(Row(rel: rel, outcome: .failed(error.localizedDescription)))
+    /// Replace each cover where it lives, keeping every original first.
+    private func writeIntoLibrary(_ hits: [URL], scope s: BatchScope, kept: URL) async throws {
+        let r = recipe
+        let dry = dryRun
+        let wb = try WriteBack.start(keptRoot: kept)
+        for hit in hits {
+            if cancelled { break }
+            // Nothing here awaits a renderer — a keep-format job never meets
+            // an SVG, since a vector has no pixel size to cap or square — so
+            // the loop yields to let the window draw its own progress.
+            await Task.yield()
+            let rel = relativePath(of: hit, under: s.strip)
+            do {
+                guard let place = placeUnder(hit, strip: s.strip) else {
+                    throw WriteBackError.noPlace(hit.path)
                 }
+                if let slot = try wb.one(source: hit, place: place, recipe: r, dry: dry) {
+                    ok += 1
+                    record(Row(rel: rel, outcome: .wrote(
+                        dry ? "would be replaced in the library, original kept at \(slot.path)"
+                            : "replaced in the library, original kept at \(slot.path)")))
+                } else {
+                    skipped += 1
+                    record(Row(rel: rel, outcome: .skipped("\(r.job.name) would not change it")))
+                }
+            } catch {
+                failed += 1
+                record(Row(rel: rel, outcome: .failed(error.localizedDescription)))
+            }
+            done += 1
+        }
+        refreshLastRun()
+    }
+
+    /// Render each file into the output folder, mirroring the source tree.
+    private func writeToFolder(_ hits: [URL], scope s: BatchScope, out: URL) async {
+        let r = recipe
+        let dry = dryRun
+        // Planned for the whole run, not file by file: two covers in one
+        // release would otherwise plan the same output and the second
+        // would replace the first, both reported as written.
+        // A file's PLACE is its whole path under the scope's prefix, and
+        // a file that has none is refused rather than given a name of its
+        // own in the output root — where every such file would land on
+        // the next one. The scope already drops a root it cannot place,
+        // so this is the second lock on the same door.
+        let places = hits.map { placeUnder($0, strip: s.strip) }
+        // **Only a file the run would write claims a name.** It matters for
+        // Convert, the one job whose output name differs from its source's: a
+        // `cover.jpg` is left alone and a `cover.png` beside it becomes
+        // `cover.jpg`, and planning both would refuse the real work as a
+        // clash with the no-op. For every other job a file left alone claims
+        // exactly the name it already holds, so this costs nothing and says
+        // what the run means either way.
+        let claims: [String?] = zip(hits, places).map { hit, place in
+            place.flatMap { wouldChange(hit, job: r.job, canvas: r.canvas) ? $0 : nil }
+        }
+        // Planned over the files that will be written and matched back by
+        // position, never looked up by name.
+        var queue = planDests(rels: claims.compactMap { $0 }, outRoot: out,
+                              job: r.job, disc: r.disc != nil).makeIterator()
+        let plan: [Result<URL, BatchError>?] = zip(zip(hits, places), claims).map { pair, claim in
+            guard pair.1 != nil else { return .failure(.noPlace(pair.0.path)) }
+            // `nil` is "nothing to write", which is neither a destination nor
+            // a failure: the loop reports it as left alone.
+            guard claim != nil else { return nil }
+            return queue.next()
+        }
+        // What each row is called is a display question, and the answer
+        // for a file with no place is its own name.
+        let rels = hits.map { relativePath(of: $0, under: s.strip) }
+
+        for ((hit, rel), planned) in zip(zip(hits, rels), plan) {
+            if cancelled { break }
+            guard let planned else {
+                skipped += 1
+                record(Row(rel: rel, outcome: .skipped("\(r.job.name) would not change it")))
                 done += 1
+                continue
+            }
+            do {
+                let dest = try planned.get()
+                // The format is settled before the render, so a file this
+                // app cannot write is reported as left-as-it-is rather
+                // than decoded and then refused.
+                let format = try batchWriteFormat(dest: dest, job: r.job)
+                // The renderer is asked again rather than trusted to agree:
+                // `wouldChange` reads a header and this reads the pixels, and
+                // a header that lies about its size is the one case where the
+                // two could differ.
+                guard let rendered = try await renderOne(hit, recipe: r) else {
+                    skipped += 1
+                    record(Row(rel: rel,
+                               outcome: .skipped("\(r.job.name) would not change it")))
+                    done += 1
+                    continue
+                }
+                if !dry {
+                    try FileManager.default.createDirectory(
+                        at: dest.deletingLastPathComponent(),
+                        withIntermediateDirectories: true)
+                    // A keep-format job carries a JPEG's own RGB through, so
+                    // there is no alpha to lose and nothing to refuse, and a
+                    // framing writes PNG and keeps its own. Convert is the
+                    // one that refuses: it is handed a PNG, which is where
+                    // transparency actually lives.
+                    try rendered.write(to: dest, as: format, alpha: r.job.alphaRule)
+                }
+                ok += 1
+                record(Row(rel: rel, outcome: .wrote(dest.path)))
+            } catch {
+                failed += 1
+                // Carry the REASON. "31 failed" is unactionable and sends
+                // you guessing at the tool from the outside.
+                record(Row(rel: rel, outcome: .failed(error.localizedDescription)))
+            }
+            done += 1
+        }
+    }
+
+    // MARK: - the two questions
+
+    private func askLibraryRun() {
+        guard let kept = originalsFolder, let lib = try? currentScope().guardRoot else { return }
+        let n = actionCount ?? total
+        pendingLibraryRun = Ask(
+            title: "Replace \(n) cover\(n == 1 ? "" : "s") in the library?",
+            detail: """
+                Each cover under \(lib.path(percentEncoded: false)) is replaced where it is, in \
+                its own name and format. Its original is copied first to the same place under \
+                \(kept.path(percentEncoded: false)), and every swap is logged there in \
+                \(WRITEBACK_LOG). A cover whose original is already kept is refused. Put back \
+                last run restores them.
+                """)
+    }
+
+    func askUndo() {
+        guard let kept = originalsFolder else {
+            error = "Choose the originals folder first."
+            return
+        }
+        guard let last = lastRunInfo else { return }
+        pendingUndo = Ask(
+            title: "Put back the run of \(last.time)?",
+            detail: """
+                \(last.swaps) cover\(last.swaps == 1 ? "" : "s") in the library go back to the \
+                originals kept in \(kept.path(percentEncoded: false)). A cover changed since that \
+                run is left as it is, and its original stays kept.
+                """)
+    }
+
+    /// Put the last run back, and say what that did.
+    ///
+    /// Not a run: nothing is rendered and nothing is written anew, so it
+    /// reports on its own line rather than through the run counters' words.
+    /// The files it could not put back are the rows, each with its reason —
+    /// their originals stay kept, so nothing is lost by one.
+    func putBackLastRun() async {
+        guard let kept = originalsFolder else {
+            error = "Choose the originals folder first."
+            return
+        }
+        reset()
+        do {
+            guard let report = try undoLastRun(in: kept) else {
+                refreshLastRun()
+                return
+            }
+            ok = report.restored
+            failed = report.skipped.count
+            total = report.restored + report.skipped.count
+            done = total
+            for skip in report.skipped {
+                record(Row(rel: skip.file.path, outcome: .failed(skip.why)))
+            }
+            undoNote = "put back run \(report.run) — \(report.restored) restored"
+                + (report.skipped.isEmpty ? "" : " · \(report.skipped.count) left as they are")
+            refreshLastRun()
+            if report.restored > 0 {
+                holdResults = true
+                await refreshSurvey()
             }
         } catch {
             self.error = error.localizedDescription
@@ -525,7 +778,7 @@ final class BatchRunner: ObservableObject {
     private func reset() {
         cancelled = false; stopped = false
         total = 0; done = 0; ok = 0; failed = 0; skipped = 0
-        rows = []; error = nil
+        rows = []; error = nil; undoNote = nil
     }
 
 
@@ -552,7 +805,10 @@ final class BatchRunner: ObservableObject {
     /// What the buttons should say they are about to do.
     /// What the Run button promises: the number of someone's files this run
     /// will write. For a keep-format job that is not the number it looked at.
-    var actionCount: Int? { recipe.job.keepsFile ? changeCount : survey?.total }
+    var actionCount: Int? {
+        if case .frame = recipe.job { return survey?.total }
+        return changeCount
+    }
 
     /// "to shrink", "to square" — what the button's count is a count of.
     var actionVerb: String? {
@@ -560,11 +816,13 @@ final class BatchRunner: ObservableObject {
         case .frame:            return nil
         case .cap:              return "to shrink"
         case .square, .pad:     return "to square"
+        case .convert:          return "to convert"
         }
     }
 
     var summary: String {
         if running { return "\(done) of \(total)…" }
+        if let undoNote { return undoNote }
         if total == 0 { return "" }
         var s = "\(ok) \(dryRun ? "would be written" : "written")"
         if skipped > 0 { s += ", \(skipped) left alone" }

@@ -36,7 +36,8 @@ struct HelpView: View {
                     "One recipe over many files: a folder, ndisc's Export list, or every release ndisc has published.",
                     "Cover and Fit write new square PNGs. Cap, Square and Pad tidy each file in place instead — same name, same format — and write nothing at all for a file they would not change.",
                     "The grid shows every file the run would touch, as it would be written. Double-click one to open it in the editor; Open folder shows it in the Finder.",
-                    "It never writes over your originals: the output folder cannot be the source, inside it, or above it.",
+                    "To a folder never writes over your originals: the output folder cannot be the source, inside it, or above it.",
+                    "Into the library replaces each cover where it lives — Cap, Square and Pad only — and copies every original first into a folder you choose, with a log beside them. It asks before it starts, and Put back last run restores them.",
                 ])
 
                 card("Colours and palettes", "eyedropper", [

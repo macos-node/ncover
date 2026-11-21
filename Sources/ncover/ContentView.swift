@@ -95,6 +95,14 @@ struct ContentView: View {
         // creates the panel, and there is no reason to pay for that before
         // there is a window.
         .task { model.syncPalettesToColorPanel() }
+        // The batch runner does not own the store, so it is handed the one
+        // thing it has to remember: the folder a library run keeps the
+        // originals in. Adopted first, while there is nothing to write it
+        // back with, so loading it is not itself a save.
+        .task {
+            batch.adoptOriginals(model.data.originals.map { URL(fileURLWithPath: $0) })
+            batch.rememberOriginals = { u in model.touch { $0.originals = u?.path } }
+        }
     }
 
     @ToolbarContentBuilder
