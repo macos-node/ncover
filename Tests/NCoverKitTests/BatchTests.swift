@@ -198,6 +198,43 @@ struct BatchTests {
         #expect(findImages(in: scope, needle: "").map(\.lastPathComponent) == ["Warp.label.jpg"])
     }
 
+    // Against the real label art, when ndisc has filled it:
+    //   NCOVER_LABELS=1 make test
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["NCOVER_LABELS"] != nil))
+    func thereallabelFolderIsWhatTheScopeFindsAndTheLibraryWalkSkips() throws {
+        let path = try #require(publishedManifestPath())
+        let m = try loadManifest(at: path)
+        let lib = try #require(m.libraryRoot.map { URL(fileURLWithPath: $0) })
+        let scope = try BatchScope.labels(m)
+        #expect(scope.roots.first?.lastPathComponent == LABELS_DIR)
+
+        // Every image in the folder, and the reason the name filter has to
+        // step aside: this is a folder scope, so "cover" would apply.
+        let all = findImages(in: scope, needle: "")
+        let underCover = findImages(in: scope, needle: "cover")
+        print("""
+            \(scope.roots[0].path)
+              \(all.count) label images · \(underCover.count) of them match "cover"
+              \(all.map(\.lastPathComponent).joined(separator: ", "))
+            """)
+        try #require(!all.isEmpty)
+        #expect(underCover.isEmpty, "no label file is called cover.*; the filter must step aside")
+
+        // And the library walk leaves every one of them alone.
+        let wholeLibrary = findImages(in: .folder(lib), needle: "")
+        #expect(!wholeLibrary.contains { $0.path.hasPrefix(scope.roots[0].path + "/") },
+                "a library-wide folder run must not take the logos for covers")
+        print("  library walk: \(wholeLibrary.count) images, none from \(LABELS_DIR)")
+
+        // What each job would do to them, from the same plan the window shows.
+        for job in [BatchJob.convert, .cap, .square, .frame(.cover)] {
+            let plan = planItems(files: all, scope: scope,
+                                 recipe: Recipe(canvas: 600, job: job, disc: nil))
+            print("  \(job.name): \(plan.count) of \(all.count)"
+                  + (plan.isEmpty ? "" : " — " + plan.map(\.name).joined(separator: ", ")))
+        }
+    }
+
     // MARK: - a file's place (phase F6)
 
     @Test func afileOutsideThePrefixHasNoPlaceAtAll() {
