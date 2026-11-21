@@ -148,6 +148,26 @@ public struct BatchScope: Equatable, Sendable {
         BatchScope(roots: [root], strip: root, guardRoot: root)
     }
 
+    /// ndisc's label art: `<library root>/_labels`, one image per record
+    /// label, from the manifest.
+    ///
+    /// A folder scope on that one directory — labels need no label-specific
+    /// machinery here, and the list scope already carries them a few at a
+    /// time (F7). This is for running over the whole folder at once. The
+    /// walk takes it because the skip above is about a `_labels` *inside*
+    /// what is being walked, not about the folder you point at.
+    public static func labels(_ m: Manifest) throws -> BatchScope {
+        guard let root = m.libraryRoot.map({ URL(fileURLWithPath: $0) })
+            ?? commonAncestor(of: m.releases.map { URL(fileURLWithPath: $0.dir) })
+        else { throw BatchError.manifestNoRoot }
+        let dir = root.appendingPathComponent(LABELS_DIR)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir),
+              isDir.boolValue
+        else { throw BatchError.noLabelsFolder(dir.path) }
+        return .folder(dir)
+    }
+
     /// The published releases become the walk roots; the library root is both
     /// the mirror prefix and the boundary the guard protects — the originals
     /// *are* the library, and every release directory lives under it.
@@ -182,6 +202,8 @@ public enum BatchError: LocalizedError, Equatable {
     case listUnreadable(String)
     case listEmpty
     case listNoRoot
+    /// The library has no `_labels` folder yet.
+    case noLabelsFolder(String)
     /// A source has no place under the scope's prefix, so there is nowhere to
     /// mirror it to. Refused rather than written under a name of its own.
     case noPlace(String)
@@ -208,6 +230,8 @@ public enum BatchError: LocalizedError, Equatable {
             return "No line in that list is for this job. Check the job against the list's actions column — Cap takes the `ncover:cap` lines and Square the `ncover:square` ones."
         case .listNoRoot:
             return "The folders in that list have no parent in common, so there is nothing for the output to mirror."
+        case .noLabelsFolder(let path):
+            return "No \(LABELS_DIR) folder under the library yet (\(path)). ndisc writes the label art there once it has filled it."
         case .noPlace(let what):
             return "\(what) is not under the scope's own folder, so it has no place in the output; refused rather than written under a name of its own"
         }
@@ -265,12 +289,21 @@ public func loadManifest(at url: URL) throws -> Manifest {
 
 // MARK: - discovery
 
+/// The folder ndisc keeps one image per record label in, under the library
+/// root. Reserved suite-wide by ndisc's SUITE.md.
+public let LABELS_DIR = "_labels"
+
 /// Walk `root` for images whose filename contains `needle`, case-insensitively;
 /// an empty needle matches everything.
 ///
-/// Hidden directories are skipped — nothing in a `.git` is artwork. The order
-/// is by name, because a dry run and the real run have to agree and "the order
-/// the filesystem felt like" is not an order.
+/// Hidden directories are skipped — nothing in a `.git` is artwork. **A
+/// directory named `_labels` is skipped too**, unless it is the folder being
+/// walked: it holds one logo per record label, not covers, and a
+/// library-wide run that swept it up would treat every label's artwork as a
+/// release's. The name is reserved across the suite, so this is a rule about
+/// the name and not about where it happens to sit. The order is by name,
+/// because a dry run and the real run have to agree and "the order the
+/// filesystem felt like" is not an order.
 public func findImages(root: URL, needle: String, into out: inout [URL]) {
     let want = needle.lowercased()
     let entries = (try? FileManager.default.contentsOfDirectory(
@@ -282,6 +315,7 @@ public func findImages(root: URL, needle: String, into out: inout [URL]) {
         var isDir: ObjCBool = false
         FileManager.default.fileExists(atPath: path.path, isDirectory: &isDir)
         if isDir.boolValue {
+            if name == LABELS_DIR { continue }
             // A folder we cannot read is not fatal to the whole run.
             findImages(root: path, needle: needle, into: &out)
             continue

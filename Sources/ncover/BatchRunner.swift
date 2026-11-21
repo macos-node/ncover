@@ -17,13 +17,14 @@ import SwiftUI
 @MainActor
 final class BatchRunner: ObservableObject {
     enum Scope: String, CaseIterable, Identifiable {
-        case folder, list, published
+        case folder, list, published, labels
         var id: String { rawValue }
         var label: String {
             switch self {
             case .folder:    return "A folder"
             case .list:      return "From a list…"
             case .published: return "ndisc's published releases"
+            case .labels:    return "Label art"
             }
         }
 
@@ -34,6 +35,7 @@ final class BatchRunner: ObservableObject {
             case .folder:    return "folder"
             case .list:      return "list.bullet"
             case .published: return "opticaldisc"
+            case .labels:    return "tag"
             }
         }
     }
@@ -81,7 +83,24 @@ final class BatchRunner: ObservableObject {
     }
 
     // What to run
-    @Published var scope: Scope = .folder
+    @Published var scope: Scope = .folder {
+        didSet {
+            guard scope != oldValue else { return }
+            // **The name filter steps aside for label art and comes back
+            // after.** Its usual value is "cover", which is right for a
+            // release folder holding back and inlay art and wrong for a
+            // folder of `*.label.jpg`: it would match nothing at all, and an
+            // empty scope reads as a missing folder rather than a filter.
+            if scope == .labels {
+                needleBeforeLabels = needle
+                needle = ""
+            } else if oldValue == .labels, let was = needleBeforeLabels {
+                needle = was
+                needleBeforeLabels = nil
+            }
+        }
+    }
+    private var needleBeforeLabels: String?
     @Published var sourceFolder: URL?
     /// The cover list file, and what parsing it gave. Parsed when it is
     /// chosen rather than on every survey: it is a file someone picked, and
@@ -250,6 +269,15 @@ final class BatchRunner: ObservableObject {
             if manifestPath == nil {
                 return "ndisc has not exported a manifest, so there is nothing published to batch over."
             }
+        case .labels:
+            if manifestPath == nil {
+                return "ndisc has not exported a manifest, so the library root — and the \(LABELS_DIR) folder under it — is not known."
+            }
+            // The folder itself may not be there yet: ndisc fills it, and
+            // until it does there is nothing to run over.
+            if case .failure(let e) = Result(catching: { try currentScope() }) {
+                return e.localizedDescription
+            }
         }
         switch output {
         case .folder:
@@ -299,6 +327,9 @@ final class BatchRunner: ObservableObject {
         case .published:
             guard let p = manifestPath else { throw BatchError.manifestMissing }
             return try .published(try loadManifest(at: p))
+        case .labels:
+            guard let p = manifestPath else { throw BatchError.manifestMissing }
+            return try .labels(try loadManifest(at: p))
         }
     }
 
@@ -418,7 +449,7 @@ final class BatchRunner: ObservableObject {
         switch scope {
         case .folder where sourceFolder == nil: return "Choose a folder of artwork."
         case .list where listPath == nil:       return "Choose a cover list."
-        case .published where manifestPath == nil:
+        case .published where manifestPath == nil, .labels where manifestPath == nil:
             return "ndisc has not exported a manifest."
         default:
             return survey?.total == 0
@@ -494,6 +525,7 @@ final class BatchRunner: ObservableObject {
         // on it: `guardBatch`'s refusals do, and a key that leaves out an
         // input is exactly how the grid went stale against the controls.
         [scope.rawValue, sourceFolder?.path ?? "", listPath?.path ?? "",
+         (try? currentScope())?.roots.first?.path ?? "",
          outputFolder?.path ?? "", needle,
          String(canvas), String(describing: job),
          String(describing: padFill), discOn ? "disc" : "plain", fill.rawValue,

@@ -149,6 +149,55 @@ struct BatchTests {
                              under: strip) == "cover.png")
     }
 
+    // MARK: - label art (phase F8)
+
+    @Test func awalkSkipsLabelsUnlessItIsTheFolderWalked() throws {
+        // `_labels` holds one logo per record label, not covers. A
+        // library-wide run that swept it up would treat every label's
+        // artwork as a release's — and the name is reserved across the
+        // suite, so this is a rule about the name, not about the place.
+        let lib = tmpdir("labels-skip")
+        let release = lib.appendingPathComponent("A/One")
+        let labels = lib.appendingPathComponent(LABELS_DIR)
+        for d in [release, labels] {
+            try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        }
+        try Data("x".utf8).write(to: release.appendingPathComponent("cover.jpg"))
+        try Data("x".utf8).write(to: labels.appendingPathComponent("Warp.label.jpg"))
+
+        var walked: [URL] = []
+        findImages(root: lib, needle: "", into: &walked)
+        #expect(walked.map(\.lastPathComponent) == ["cover.jpg"],
+                "the library walk leaves \(LABELS_DIR) alone")
+
+        // Unless it is the folder you pointed at, which is the whole point
+        // of the Label art scope.
+        var inside: [URL] = []
+        findImages(root: labels, needle: "", into: &inside)
+        #expect(inside.map(\.lastPathComponent) == ["Warp.label.jpg"])
+    }
+
+    @Test func thelabelScopeIsTheLabelsFolderUnderTheManifestsLibraryRoot() throws {
+        let lib = tmpdir("labels-scope")
+        let labels = lib.appendingPathComponent(LABELS_DIR)
+        let json = { (root: String) in
+            Data(#"{"version":2,"libraryRoot":"\#(root)","releases":[{"id":1,"dir":"\#(root)/A/One"}]}"#.utf8)
+        }
+        let m = try JSONDecoder().decode(Manifest.self, from: json(lib.path))
+
+        // Until ndisc has filled it, the scope says so rather than running
+        // over nothing.
+        #expect(throws: BatchError.noLabelsFolder(labels.path)) { _ = try BatchScope.labels(m) }
+
+        try FileManager.default.createDirectory(at: labels, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: labels.appendingPathComponent("Warp.label.jpg"))
+        let scope = try BatchScope.labels(m)
+        #expect(scope.roots.map(\.lastPathComponent) == [LABELS_DIR])
+        #expect(scope.strip.path == labels.path, "one folder, mirrored from itself")
+        #expect(scope.guardRoot.path == labels.path)
+        #expect(findImages(in: scope, needle: "").map(\.lastPathComponent) == ["Warp.label.jpg"])
+    }
+
     // MARK: - a file's place (phase F6)
 
     @Test func afileOutsideThePrefixHasNoPlaceAtAll() {

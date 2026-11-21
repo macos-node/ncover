@@ -9,6 +9,14 @@ Their version numbers are independent.
 ## [Unreleased]
 
 ### Added
+- **A Label art scope**, a fourth button (a tag) beside folder · list ·
+  disc: ndisc's `_labels` folder under the library root, read from
+  `published.json`, one image per record label. The name filter steps aside
+  there — label files are not `cover.*` — and comes back when you leave.
+  Until ndisc has filled `_labels` the scope says so and Run stays off.
+  **Every other walk now skips a folder named `_labels`**, reserved for
+  label art suite-wide, so a library-wide folder run never takes the logos
+  for covers.
 - **Convert**, a sixth job: a PNG re-encoded as a JPEG under the same stem —
   `cover.png` → `cover.jpg`, quality 92, not one pixel changed. It takes
   ndisc's `ncover:convert` lines, the last action in its vocabulary that no

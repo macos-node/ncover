@@ -41,7 +41,7 @@ struct BatchView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .tip("Where the images come from: a folder of artwork, a text file of release folders (ndisc's Export list), or every release ndisc has published.")
+                    .tip("Where the images come from: a folder of artwork, a text file of release folders (ndisc's Export list), every release ndisc has published, or ndisc's label art — one image per record label in \(LABELS_DIR) under the library root.")
 
                     if run.scope == .folder {
                         LabeledContent("Source") {
@@ -71,6 +71,14 @@ struct BatchView: View {
                                     .font(.caption).foregroundStyle(.orange)
                             }
                         }
+                    } else if run.scope == .labels {
+                        LabeledContent("Label art") {
+                            Text((try? run.currentScope().roots.first?.path(percentEncoded: false))
+                                 ?? "\(LABELS_DIR) — not there yet")
+                                .lineLimit(1).truncationMode(.head).font(.caption)
+                                .foregroundStyle((try? run.currentScope()) == nil ? .orange : .secondary)
+                        }
+                        .tip("ndisc keeps one image per record label in \(LABELS_DIR) under the library root, which the manifest names. A folder scope on that one folder — labels also arrive a few at a time as list lines.")
                     } else if let p = run.manifestPath {
                         LabeledContent("Manifest") {
                             Text(p.path(percentEncoded: false))
@@ -465,7 +473,8 @@ struct BatchView: View {
     }
 
     private func headline(_ s: BatchSurvey) -> String {
-        let what = run.scope == .folder ? "folder" : "release"
+        // A label folder holds labels, not releases, and it is one folder.
+        let what = run.scope == .folder || run.scope == .labels ? "folder" : "release"
         var out = "\(s.total) image\(s.total == 1 ? "" : "s")"
         out += " in \(s.groups.count) \(what)\(s.groups.count == 1 ? "" : "s")"
         if s.emptyRoots > 0 {

@@ -633,7 +633,21 @@ fix is one data-structure change on each side.
 ndisc's stage 3 exports label lines, but should land before then, so the
 first label export is not run over one logo.
 
-### F8. The Label art scope and the `_labels` skip (S)
+### F8. The Label art scope and the `_labels` skip (S) — **DONE 2026-11-21**
+
+**As built:** `LABELS_DIR`, the skip inside `findImages(root:needle:into:)`
+(a child directory of that name, never the walk's own root),
+`BatchScope.labels(_:)` as a folder scope on `<library root>/_labels` from
+the manifest, the fourth scope button, and the name filter moved aside on
+entering and restored on leaving. Two small divergences, both this app's
+existing pattern rather than new decisions: the button is **always
+offered** and `blocker` says what is missing (no manifest, or no `_labels`
+yet), exactly as the disc scope here already behaves; and the survey line
+counts *folders* rather than releases under it. Tests:
+`awalkSkipsLabelsUnlessItIsTheFolderWalked` (GTK's own test name) and
+`thelabelScopeIsTheLabelsFolderUnderTheManifestsLibraryRoot`. Not yet run
+against a real `_labels`: this Mac's library has none until ndisc ships
+the folder.
 
 GTK 2026-11-20 (unreleased, for 0.5.0): a fourth scope button (a tag) after
 folder · list · disc — `<library root>/_labels`, the root read from

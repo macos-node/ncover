@@ -652,6 +652,15 @@ backend changes.
   alpha**, which is what gives a transparent logo transparent bars rather than
   grey ones. Each bar reads the row or column it sits against, so the two can
   differ — a sky at the top and a floor at the bottom.
+- **`_labels` is skipped by every walk, and is a scope of its own.** ndisc
+  keeps one image per record label in `<library root>/_labels` (reserved in
+  its SUITE.md), so `findImages(root:needle:into:)` skips a *child*
+  directory of that name — a library-wide folder run that swept it up would
+  treat every label's artwork as a release's. Pointing a scope **at** the
+  folder still works, which is what `BatchScope.labels` does, because the
+  skip is about what is inside the walk and not about the walk's own root.
+  The name filter is moved aside while that scope is chosen and put back
+  after: its usual value is "cover", which matches no `*.label.jpg` at all.
 - **`BatchScope.images(under:needle:)` is the one place a root becomes
   files.** `findImages(in:)` (the run, the samples) and `surveyBatch` (the
   counts) both go through it, which is what keeps the button's number true.
