@@ -8,6 +8,18 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Fixed
+- **Every row of a one-folder run was captioned by the folder.** A file
+  sitting directly in the scope's own root has no folder under the scope to
+  be named by, so the Files list fell back to the scope folder's own name —
+  over ndisc's `_labels` that is seven logos, seven rows and one word,
+  `_labels`, with nothing to tell them apart. Such a file is now named by
+  itself (`Peak Oil.png`), while a file in a subfolder keeps the folder path
+  that distinguishes it (`Autechre/Amber`) and a name on record still wins
+  over both. Found on the first real run over the label art. The GTK sibling
+  answers the same way it did; this is a deliberate divergence until it
+  follows.
+
 ## [1.1.0] — 2026-11-21
 
 ### Added

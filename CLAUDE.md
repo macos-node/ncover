@@ -652,6 +652,13 @@ backend changes.
   alpha**, which is what gives a transparent logo transparent bars rather than
   grey ones. Each bar reads the row or column it sits against, so the two can
   differ — a sky at the top and a floor at the bottom.
+- **`nameForFile` names a file in the scope's own root by itself.** The
+  walk up for a named folder, then the folder's path under the scope
+  (`Autechre/Amber`), then — when the file is in the root itself — its own
+  file name. That last step is a divergence from GTK's `name_for_file`,
+  which answers the scope folder's name there: over a folder of logos that
+  captions every row with one word. A list line's own name
+  (`fileNames`) still wins over all of it.
 - **`_labels` is skipped by every walk, and is a scope of its own.** ndisc
   keeps one image per record label in `<library root>/_labels` (reserved in
   its SUITE.md), so `findImages(root:needle:into:)` skips a *child*

@@ -128,6 +128,35 @@ struct PlanTests {
         #expect(bare[0].name == "Autechre/Amber")
     }
 
+    @Test func afileInTheScopesOwnRootIsNamedByItself() throws {
+        // ndisc's `_labels` is one folder of logos, so there is no folder
+        // under the scope to name a file by: every row would read "_labels".
+        // Found on the first real run over it — seven logos, seven rows, one
+        // word. The sibling has the same blemish; this is the divergence.
+        let base = tmpdir("in-root")
+        let labels = base.appendingPathComponent(LABELS_DIR)
+        let nested = labels.appendingPathComponent("old")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        for (dir, file) in [(labels, "Warp.label.jpg"), (labels, "Mute.label.jpg"),
+                            (nested, "Ultra.label.jpg")] {
+            try flat(900, 900).writeJPEG(to: dir.appendingPathComponent(file))
+        }
+
+        let scope = BatchScope.folder(labels)
+        let items = planItems(files: findImages(in: scope, needle: ""), scope: scope,
+                              recipe: Recipe(canvas: 400, job: .cap, disc: nil))
+        #expect(items.map(\.name).sorted()
+                == ["Mute.label.jpg", "Warp.label.jpg", "old"],
+                "its own name in the root; the folder under the scope below it")
+
+        // A name on record still wins, wherever the file sits.
+        let named = BatchScope(roots: [labels], strip: labels, guardRoot: labels,
+                               names: [labels.standardizedFileURL.path: "The labels"])
+        let withName = planItems(files: [labels.appendingPathComponent("Warp.label.jpg")],
+                                 scope: named, recipe: Recipe(canvas: 400, job: .cap, disc: nil))
+        #expect(withName[0].name == "The labels")
+    }
+
     @Test func afileWithNoPixelSizeIsPlannedOnlyByAFraming() throws {
         let dir = tmpdir("vector")
         let svg = dir.appendingPathComponent("logo.svg")

@@ -55,6 +55,14 @@ public struct PlanItem: Identifiable, Equatable, Sendable {
 ///
 /// A file a list named carries its own name and is asked first: one folder of
 /// logos is one root, so the folder has no single name to lend its files.
+///
+/// And a file sitting **directly in the scope's own root** is named by
+/// itself. There is no folder under the scope to name it by — every file
+/// there would wear the same word, which is what a run over ndisc's
+/// `_labels` showed: seven logos, seven rows, all of them captioned
+/// "_labels". The GTK sibling answers `name_of(&self.strip)` there and has
+/// the same blemish; this is a deliberate divergence, recorded in the parity
+/// plan.
 func nameForFile(_ url: URL, in scope: BatchScope) -> String {
     if let n = scope.fileNames[url.standardizedFileURL.path] { return n }
     var dir = url.deletingLastPathComponent().standardizedFileURL
@@ -66,7 +74,14 @@ func nameForFile(_ url: URL, in scope: BatchScope) -> String {
         if up.path == dir.path { break }
         dir = up
     }
-    return relativePath(of: url.deletingLastPathComponent(), under: scope.strip)
+    // The folder's path under the scope, where there is one: a folder scope's
+    // two Ambers read `Autechre/Amber` and `Boards of Canada/Amber`. Where
+    // there is not — the file is in the root itself — its own name is the
+    // only thing that tells it from its neighbours.
+    if let folder = placeUnder(url.deletingLastPathComponent(), strip: scope.strip) {
+        return folder
+    }
+    return url.lastPathComponent
 }
 
 /// Every file a run of `recipe` would write, numbered and in review order.

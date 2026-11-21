@@ -513,6 +513,14 @@ to stay readable.
 
 ### F4. Grid captions (XS, optional)
 
+**Related, and changed here first (2026-11-21):** `nameForFile` names a file
+that sits in the scope's **own root** by its own file name, where GTK's
+`name_for_file` answers `name_of(&self.strip)`. Over ndisc's `_labels` that
+is seven logos captioned `_labels`, seven times — found on the first real
+run over the folder, not by reading. A file in a subfolder still takes the
+folder path under the scope, and a name on record still wins over both. The
+sibling has the same blemish and may want the same answer.
+
 The cells here show only their number; GTK's show the number, the release
 name and the size change. Both are fine — the Files list carries the detail
 here — but if the number alone is ever ambiguous, add the name the Files
