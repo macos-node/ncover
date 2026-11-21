@@ -8,6 +8,8 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-11-21
+
 ### Added
 - **A Label art scope**, a fourth button (a tag) beside folder · list ·
   disc: ndisc's `_labels` folder under the library root, read from
