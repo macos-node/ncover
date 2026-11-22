@@ -296,6 +296,15 @@ backend changes.
     write the new file beside the source, and only once it is whole remove
     the source — if that removal fails the JPEG goes again, so the library is
     as it was.
+  - **Convert renames a file ndisc remembers.** ndisc records a label's art
+    as `<Label name>.<ext>` (its `art_file`), and a cover as a path, so a
+    Convert into the library leaves both naming a file that is gone until
+    ndisc rescans — and its label pick does not survive a rescan on its own.
+    ndisc 0.9.1 answers by matching the stem (its `match_label_files` and
+    `plan_label_fill`, and SUITE.md's "a label's file is its file whatever
+    its extension"); **with an older ndisc, a fill would copy the PNG back
+    in beside the JPEG.** The confirm says to rescan for this reason, and it
+    is not decoration.
   - **The alpha guard asks the DESTINATION's format.** For the keep-format
     jobs source and destination are one file, so it never mattered; Convert
     reads a PNG and writes a JPEG, and asking the source would mean never
