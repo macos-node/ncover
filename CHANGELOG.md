@@ -8,7 +8,13 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-11-22
+
 ### Added
+- **A new app icon**, from the 2026-11-22 master: the suite's "n" as a purple
+  outline on `#00AEFF`, on Apple's icon grid (the art in an 824 square of a
+  1024 canvas, corners at r=185). Shared with the GTK sibling, which has a
+  square variant of the same art for the tile it crops to.
 - **Convert into the library**, which until now it alone could not do: the
   JPEG is written beside the PNG, the PNG is kept in the originals folder
   under its own name and removed from the library, and the confirm says to

@@ -71,6 +71,12 @@ backend changes.
 
 ## Traps specific to this repo
 
+- **The icon art changed on 2026-11-22**: the "n" as a purple outline on
+  `#00AEFF`. Figma exports two, `ncover.svg` (corners at r=185, Apple's
+  grid) and `ncover-sq.svg` (square); **this repo's master is the rounded
+  one**, because macOS does not round an app icon for you — the shape has to
+  be in the art. Check a regenerated icns by reading its pixels, not by
+  eye: the 1024 slice should be ~8% purple, ~52% blue and ~37% clear.
 - **The icon master is uncropped, and must stay that way.** `icon.svg` is the
   Figma export shared with the GTK sibling: a 1024 canvas with the art in an
   824 square, which is Apple's icon grid. The **Linux** build crops that margin
