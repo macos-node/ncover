@@ -704,13 +704,21 @@ JPEG is not converted. **Three decisions are new and travel back:**
   only job whose output name differs from its source's, so a `cover.jpg`
   left alone and a `cover.png` beside it both plan `cover.jpg`, and the real
   work was refused as a clash with the no-op.
-- **Into the library is refused for it**, where Cap, Square and Pad are not:
-  replacing in place means writing `cover.jpg` *and removing* `cover.png`,
-  and `ncover-log.tsv` records one library file per swap with no way to say
-  "and this one went". **The open question to settle together** before
-  either app offers it: the log grows a column (both apps, one wave), or the
-  undo infers the original's name from the kept slot
-  (`dirname(lib) + basename(kept)`), which works but is inference.
+- **Into the library — settled 2026-11-22, and built on both sides.** The
+  open question was how a log line records a swap that removes a file as
+  well as writing one. The answer, decided with GTK and shipped there in
+  0.7.0: **an 11th column, Convert's lines only, naming the library file
+  removed.** Not a column on every line, so ten-column lines stay readable
+  by any version; not inference from the kept slot, so nothing has to be
+  reconstructed from two names. A reader that predates the column skips an
+  11-column line rather than putting a PNG's bytes back under the JPEG's
+  name. Here: `readLog` takes ten or eleven, the undo reads the 11th as the
+  name the original returns to and then removes the JPEG, and Convert's
+  write order is the mirror of the keep-format jobs' — the new file first,
+  the source removed only once it is whole. It is refused when the library
+  already has the `.jpg`, before the render and in a dry run; and the alpha
+  guard asks the **destination's** format, since a PNG source says nothing
+  about what a JPEG can hold.
 
 Also here now, and not in any phase: `wouldWrite` is the one question asked
 of a real file — what would this job write for it, or nothing — and the

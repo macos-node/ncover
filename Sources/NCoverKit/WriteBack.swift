@@ -30,6 +30,14 @@ import Foundation
 //   plain TSV, and the last run can be put back from it. A swap the log does
 //   not know about cannot be undone, so a swap whose line cannot be written
 //   is undone at once instead of being left in place.
+// - **Convert removes a file as well as writing one.** `cover.png` becomes
+//   `cover.jpg`, so its swap line carries an **11th column: the library file
+//   it removed**. Only Convert's lines have it (decided with the GTK sibling,
+//   2026-11-22, and shipped there in 0.7.0): every other job's line stays at
+//   ten, readable by any version, and a reader that predates the column skips
+//   an 11-column line rather than putting a PNG's bytes back under the JPEG's
+//   name. Put back reads it as the place the original returns to, and removes
+//   the JPEG.
 //
 // The log is **the same file, name and columns as the GTK app's**, which is
 // not decoration: one library, one originals folder, and either app may have
@@ -40,7 +48,7 @@ public let WRITEBACK_LOG = "ncover-log.tsv"
 
 private let LOG_HEAD = """
 # n.cover write-back log. One `swap` line per replaced file, one `undo` line per run put back.
-# swap\trun\ttime\tjob\tlibrary file\toriginal kept\tbefore\tafter\twritten bytes\twritten mtime (ns)
+# swap\trun\ttime\tjob\tlibrary file\toriginal kept\tbefore\tafter\twritten bytes\twritten mtime (ns)\t[library file removed: convert only]
 # undo\trun\ttime\trestored\tskipped
 
 """
@@ -48,6 +56,8 @@ private let LOG_HEAD = """
 public enum WriteBackError: LocalizedError, Equatable {
     /// Cover or Fit asked to write into the library.
     case notAKeepFormatJob(String)
+    /// Convert would write a JPEG the library already has.
+    case convertWouldOverwrite(String)
     case originalsIsLibrary
     case originalsInsideLibrary
     case libraryInsideOriginals
@@ -65,7 +75,9 @@ public enum WriteBackError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .notAKeepFormatJob(let job):
-            return "Only Cap, Square and Pad replace a file where it is. \(job) writes a new file under another name, so the old one would still be there and ndisc would still point at it."
+            return "Only Cap, Square, Pad and Convert write into the library. \(job) writes a PNG under another name, so the old file would still be there and ndisc would still point at it."
+        case .convertWouldOverwrite(let name):
+            return "The library already has \(name) beside it; converting would write over it. Left as it is."
         case .originalsIsLibrary:
             return "The originals folder is the library itself. Choose a folder outside it."
         case .originalsInsideLibrary:
@@ -170,6 +182,37 @@ func copyWhole(from: URL, to: URL) throws {
     }
 }
 
+/// `cover.png` → `cover.jpg` beside it: Convert's library file.
+func convertName(of url: URL) -> URL {
+    url.deletingLastPathComponent()
+        .appendingPathComponent(url.deletingPathExtension().lastPathComponent + ".jpg")
+}
+
+/// Write a result at a path that does not exist yet: a temp name beside it,
+/// then renamed into place, with `like`'s permissions.
+///
+/// Not `replaceFile`: there is nothing to replace, and a plain write would
+/// leave a half-written file behind if the encoder failed. The destination is
+/// checked again at the last moment, because the whole point of this path is
+/// that the name was free.
+private func writeNew(_ r: Raster, to dest: URL, as format: ImageFormat, like: URL) throws {
+    let tmp = tmpBeside(dest)
+    try? FileManager.default.removeItem(at: tmp)
+    do {
+        try r.write(to: tmp, as: format, alpha: .discard)
+        if let mode = try? FileManager.default.attributesOfItem(atPath: like.path)[.posixPermissions] {
+            try? FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: tmp.path)
+        }
+        guard !somethingExists(at: dest) else {
+            throw WriteBackError.convertWouldOverwrite(dest.lastPathComponent)
+        }
+        try FileManager.default.moveItem(at: tmp, to: dest)
+    } catch {
+        try? FileManager.default.removeItem(at: tmp)
+        throw error
+    }
+}
+
 /// Put a kept original back over a library file: copied beside it and renamed
 /// over it, so the library file is whole at every moment.
 private func restore(kept: URL, over lib: URL) throws {
@@ -235,25 +278,38 @@ public struct WriteBack: Sendable {
     @discardableResult
     public func one(source: URL, place: String, recipe r: Recipe,
                     dry: Bool = false) throws -> URL? {
-        guard r.job.keepsFile else { throw WriteBackError.notAKeepFormatJob(r.job.name) }
+        if case .frame = r.job { throw WriteBackError.notAKeepFormatJob(r.job.name) }
         let kept = try slot(for: place)
+        // Where the result goes: the source itself, or for Convert the same
+        // path as `.jpg`, with the source then removed.
+        let convert = r.job == .convert
+        let lib = convert ? convertName(of: source) : source
         // The log is TSV. A path that would break a line of it is refused
         // before anything is touched, rather than written and unrecordable.
-        for p in [source.path, kept.path] where p.contains("\t") || p.contains("\n") {
+        for p in [source.path, kept.path, lib.path] where p.contains("\t") || p.contains("\n") {
             throw WriteBackError.pathHoldsTabOrNewline(p)
         }
         guard wouldChange(source, job: r.job, canvas: r.canvas) else { return nil }
         guard !somethingExists(at: kept) else { throw WriteBackError.slotTaken(kept.path) }
+        // Refused before the render and in a dry run too: Convert writes a
+        // *new* file, and a library that already holds that name would lose
+        // it. The keep-format jobs cannot meet this — they write the name
+        // they read.
+        if convert, somethingExists(at: lib) {
+            throw WriteBackError.convertWouldOverwrite(lib.lastPathComponent)
+        }
         // Settled before the render, so a format this app cannot write is
         // reported as left alone rather than decoded and then refused.
-        let format = try batchWriteFormat(dest: source, job: r.job)
+        let format = try batchWriteFormat(dest: lib, job: r.job)
         guard let made = try batchRender(try Raster.load(contentsOf: source), recipe: r) else {
             return nil
         }
-        // A keep-format job carries a JPEG's own RGB through, so there should
-        // be no alpha at all; if there is, this is the guard that refuses to
-        // store it as black.
-        try guardOverwrite(source: source, resultIsOpaque: made.isOpaque)
+        // Asked of the **destination**, which for Convert is not the file it
+        // read: a PNG source says nothing about whether a JPEG can hold what
+        // is in it. A keep-format job carries a JPEG's own RGB through, so
+        // there should be no alpha at all; if there is, this is the guard
+        // that refuses to store it as black.
+        try guardOverwrite(source: lib, resultIsOpaque: made.isOpaque)
         if dry { return kept }
 
         let before = imageSize(of: source)
@@ -263,11 +319,24 @@ public struct WriteBack: Sendable {
             pruneEmpty(kept.deletingLastPathComponent(), upTo: keptRoot)
         }
         do {
-            try made.replaceFile(at: source, as: format, alpha: .discard)
+            if convert {
+                // A new file beside the source, then the source removed —
+                // and only once the new one is whole. If the removal fails
+                // the JPEG goes again, so the library is as it was.
+                try writeNew(made, to: lib, as: format, like: source)
+                do {
+                    try FileManager.default.removeItem(at: source)
+                } catch {
+                    try? FileManager.default.removeItem(at: lib)
+                    throw error
+                }
+            } else {
+                try made.replaceFile(at: source, as: format, alpha: r.job.alphaRule)
+            }
         } catch {
-            // The rename never happened, so the library still holds the
-            // original: the copy is not needed, and must not hold the slot
-            // against a later run.
+            // Nothing of the library's has changed — the rename never
+            // happened, or the JPEG has been taken away again — so the copy
+            // is not needed and must not hold the slot against a later run.
             forgetKept()
             throw error
         }
@@ -276,6 +345,7 @@ public struct WriteBack: Sendable {
         let undoTheSwap = { (why: String) -> WriteBackError in
             do {
                 try restore(kept: kept, over: source)
+                if convert { try FileManager.default.removeItem(at: lib) }
             } catch {
                 return .logUnwritable(
                     why: why,
@@ -286,15 +356,18 @@ public struct WriteBack: Sendable {
         }
         // Its own numbers, read back from the file this run has just written:
         // they are what the undo compares against, so a guess will not do.
-        guard let now = fileStamp(source) else {
+        guard let now = fileStamp(lib) else {
             throw undoTheSwap("the file it had just written could not be read")
         }
-        let line = [
-            "swap", run, time, r.job.name.lowercased(), source.path, kept.path,
+        // Ten columns, and an eleventh only for Convert: the library file it
+        // removed. An older reader skips an 11-column line rather than
+        // putting a PNG's bytes back under the JPEG's name.
+        let line = ([
+            "swap", run, time, r.job.name.lowercased(), lib.path, kept.path,
             before.map { "\($0.width)x\($0.height)" } ?? "-",
             "\(made.width)x\(made.height)",
             "\(now.bytes)", "\(now.mtimeNS)",
-        ].joined(separator: "\t") + "\n"
+        ] + (convert ? [source.path] : [])).joined(separator: "\t") + "\n"
         do {
             try appendLog(line, in: keptRoot)
         } catch {
@@ -328,6 +401,9 @@ public struct WriteBackLogRow: Equatable, Sendable {
     public var kept: URL?
     public var bytes: Int64
     public var mtimeNS: Int64
+    /// Convert's 11th column: the library file the swap removed, which is
+    /// where its original goes back to. `nil` on every other job's line.
+    public var removed: URL?
 }
 
 /// Every line of the log that is one. The header, and anything a person has
@@ -342,16 +418,19 @@ public func readLog(in keptRoot: URL) throws -> [WriteBackLogRow] {
     var rows: [WriteBackLogRow] = []
     for line in text.components(separatedBy: .newlines) {
         let f = line.components(separatedBy: "\t")
-        if f.count == 10, f[0] == "swap" {
+        if f.count == 10 || f.count == 11, f[0] == "swap" {
             rows.append(WriteBackLogRow(
                 undo: false, run: f[1], time: f[2],
                 lib: URL(fileURLWithPath: f[4]), kept: URL(fileURLWithPath: f[5]),
                 // An unreadable number must not read as "unchanged": a size
                 // nothing can match and a time nothing can match.
-                bytes: Int64(f[8]) ?? .max, mtimeNS: Int64(f[9]) ?? -1))
+                bytes: Int64(f[8]) ?? .max, mtimeNS: Int64(f[9]) ?? -1,
+                removed: f.count == 11 && !f[10].isEmpty
+                    ? URL(fileURLWithPath: f[10]) : nil))
         } else if f.count >= 3, f[0] == "undo" {
             rows.append(WriteBackLogRow(undo: true, run: f[1], time: f[2],
-                                        lib: nil, kept: nil, bytes: 0, mtimeNS: 0))
+                                        lib: nil, kept: nil, bytes: 0, mtimeNS: 0,
+                                        removed: nil))
         }
     }
     return rows
@@ -407,8 +486,27 @@ public func undoLastRun(in keptRoot: URL, now: Date = Date()) throws -> UndoRepo
             report.skipped.append(.init(file: lib, why: "its original is no longer at \(kept.path)"))
             continue
         }
+        // Convert's original goes back to the name it had, which must still
+        // be free; then the JPEG it became is removed.
+        let backTo = row.removed ?? lib
+        if row.removed != nil, somethingExists(at: backTo) {
+            report.skipped.append(.init(
+                file: lib, why: "\(backTo.path) is in the library again; left as it is"))
+            continue
+        }
         do {
-            try restore(kept: kept, over: lib)
+            try restore(kept: kept, over: backTo)
+            if row.removed != nil {
+                do {
+                    try FileManager.default.removeItem(at: lib)
+                } catch {
+                    // The original is back; the JPEG beside it stays, and is
+                    // named, rather than the original leaving again.
+                    report.skipped.append(.init(
+                        file: lib,
+                        why: "its original is back, but this could not be removed (\(error.localizedDescription))"))
+                }
+            }
             try? FileManager.default.removeItem(at: kept)
             pruneEmpty(kept.deletingLastPathComponent(), upTo: keptRoot)
             report.restored += 1

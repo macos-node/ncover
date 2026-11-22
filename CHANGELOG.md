@@ -8,6 +8,24 @@ Their version numbers are independent.
 
 ## [Unreleased]
 
+### Added
+- **Convert into the library**, which until now it alone could not do: the
+  JPEG is written beside the PNG, the PNG is kept in the originals folder
+  under its own name and removed from the library, and the confirm says to
+  rescan in ndisc after. Refused when the library already has the `.jpg` —
+  before the render, and in a dry run too. *Put back last run* returns the
+  PNG to its own name and removes the JPEG; if that name is taken again, the
+  line is named and nothing is moved.
+  - **The log grows an 11th column for Convert's lines only**: the library
+    file removed. Decided with the GTK sibling (shipped there in 0.7.0) so
+    one originals folder can hold runs from both: every other job's line
+    stays at ten columns, readable by any version, and a reader that predates
+    the column skips an 11-column line rather than putting a PNG's bytes back
+    under the JPEG's name.
+  - The alpha guard now asks the **destination's** format, not the source's.
+    A PNG source says nothing about whether a JPEG can hold what is in it,
+    and Convert is the one job where the two differ.
+
 ## [1.1.1] — 2026-11-22
 
 ### Fixed

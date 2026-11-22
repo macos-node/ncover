@@ -26,6 +26,18 @@ private func jpeg(_ url: URL, _ w: Int, _ h: Int, _ c: RGBA = RGBA(51, 102, 153,
     try r.writeJPEG(to: url)
 }
 
+private func png(_ url: URL, _ w: Int, _ h: Int, _ c: RGBA = RGBA(51, 102, 153, 255),
+                 transparentCorner: Bool = false) throws {
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                            withIntermediateDirectories: true)
+    var r = Raster(empty: w, height: h)
+    for i in stride(from: 0, to: r.px.count, by: 4) {
+        r.px[i] = c.r; r.px[i + 1] = c.g; r.px[i + 2] = c.b; r.px[i + 3] = 255
+    }
+    if transparentCorner { r.set(0, 0, RGBA(0, 0, 0, 0)) }
+    try r.writePNG(to: url)
+}
+
 private func square() -> Recipe { Recipe(canvas: 600, job: .square, disc: nil) }
 
 private func place(_ f: URL, under lib: URL) throws -> String {
@@ -236,6 +248,141 @@ struct WriteBackTests {
                 "the first run is still in place")
         #expect(try undoLastRun(in: kept)?.run == first.run)
         #expect(imageSize(of: a).map { [$0.width, $0.height] } == [600, 538])
+    }
+
+    // MARK: - Convert into the library (the shared 11th column)
+
+    @Test func convertIntoTheLibraryKeepsThePngLogsElevenColumnsAndPutsBack() throws {
+        // GTK's own test name. `cover.png` becomes `cover.jpg`, the PNG is
+        // kept under its own name and leaves the library, and the swap line
+        // carries an 11th column naming what it removed.
+        let base = tmpdir("convert")
+        let lib = base.appendingPathComponent("library")
+        let kept = base.appendingPathComponent("originals")
+        let logo = lib.appendingPathComponent("_labels/Peak Oil.png")
+        try png(logo, 500, 300)
+        let before = try Data(contentsOf: logo)
+
+        let wb = try WriteBack.start(keptRoot: kept)
+        let place = try place(logo, under: lib)
+        let recipe = Recipe(canvas: 600, job: .convert, disc: nil)
+
+        #expect(try wb.one(source: logo, place: place, recipe: recipe, dry: true) != nil,
+                "a dry run says it would")
+        #expect(FileManager.default.fileExists(atPath: logo.path))
+        #expect(!FileManager.default.fileExists(
+            atPath: lib.appendingPathComponent("_labels/Peak Oil.jpg").path), "and writes nothing")
+
+        let got = try wb.one(source: logo, place: place, recipe: recipe)
+        let k = kept.appendingPathComponent("_labels/Peak Oil.png")
+        let jpg = lib.appendingPathComponent("_labels/Peak Oil.jpg")
+        #expect(got?.path == k.path)
+        #expect(!FileManager.default.fileExists(atPath: logo.path), "the PNG has left the library")
+        #expect(try Data(contentsOf: k) == before, "kept byte for byte, under its own name")
+        #expect(imageSize(of: jpg).map { [$0.width, $0.height] } == [500, 300])
+        #expect(ImageFormat.of(jpg) == .jpeg)
+
+        let line = try #require(try String(contentsOf: kept.appendingPathComponent(WRITEBACK_LOG),
+                                           encoding: .utf8)
+            .components(separatedBy: .newlines).first { $0.hasPrefix("swap\t") })
+        let f = line.components(separatedBy: "\t")
+        #expect(f.count == 11, "Convert's swap line carries the removed file")
+        #expect([f[3], f[4], f[5], f[10]] == ["convert", jpg.path, k.path, logo.path])
+
+        let report = try #require(try undoLastRun(in: kept))
+        #expect((report.restored, report.skipped.count) == (1, 0))
+        #expect(try Data(contentsOf: logo) == before, "Put back returns the PNG to its own name")
+        #expect(!FileManager.default.fileExists(atPath: jpg.path), "and removes the JPEG")
+        #expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("_labels").path),
+                "the kept copy and its folder are gone")
+        #expect(try lastRun(in: kept) == nil)
+    }
+
+    @Test func convertRefusesAJpegAlreadyBesideItAndATransparentPng() throws {
+        let base = tmpdir("convert-refused")
+        let lib = base.appendingPathComponent("library")
+        let kept = base.appendingPathComponent("originals")
+        let a = lib.appendingPathComponent("A/cover.png")
+        let b = lib.appendingPathComponent("B/cover.png")
+        try png(a, 400, 400, RGBA(255, 0, 0, 255))
+        try jpeg(lib.appendingPathComponent("A/cover.jpg"), 400, 400, RGBA(0, 255, 0, 255))
+        try png(b, 400, 400, RGBA(255, 0, 0, 255), transparentCorner: true)
+
+        let wb = try WriteBack.start(keptRoot: kept)
+        let recipe = Recipe(canvas: 600, job: .convert, disc: nil)
+        // Both refusals hold for a dry run as well: a dry run that passes
+        // where the real one fails is a dry run that tells you nothing.
+        for dry in [true, false] {
+            #expect(throws: WriteBackError.convertWouldOverwrite("cover.jpg")) {
+                _ = try wb.one(source: a, place: "A/cover.png", recipe: recipe, dry: dry)
+            }
+            #expect(throws: WriteGuardError.overwriteJPEGHasAlpha) {
+                _ = try wb.one(source: b, place: "B/cover.png", recipe: recipe, dry: dry)
+            }
+        }
+        #expect(FileManager.default.fileExists(atPath: a.path))
+        #expect(FileManager.default.fileExists(atPath: b.path))
+        #expect(imageSize(of: lib.appendingPathComponent("A/cover.jpg")).map(\.width) == 400,
+                "the JPEG already there is untouched")
+        #expect(!FileManager.default.fileExists(atPath: lib.appendingPathComponent("B/cover.jpg").path))
+        #expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("A").path))
+        #expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("B").path),
+                "nothing kept for a refusal")
+    }
+
+    @Test func atenColumnLineStillReadsAndAnUndoOfOneLeavesTheOtherAlone() throws {
+        // The format is shared with GTK, so both shapes have to read: ten
+        // columns for Cap, Square and Pad, eleven for Convert, in one log.
+        let base = tmpdir("mixed")
+        let lib = base.appendingPathComponent("library")
+        let kept = base.appendingPathComponent("originals")
+        let logo = lib.appendingPathComponent("A/cover.png")
+        let jpg = lib.appendingPathComponent("B/cover.jpg")
+        try png(logo, 500, 500, RGBA(9, 9, 9, 255))
+        try jpeg(jpg, 900, 538)
+
+        let wb = try WriteBack.start(keptRoot: kept)
+        _ = try wb.one(source: logo, place: "A/cover.png",
+                       recipe: Recipe(canvas: 600, job: .convert, disc: nil))
+        _ = try wb.one(source: jpg, place: "B/cover.jpg",
+                       recipe: Recipe(canvas: 600, job: .square, disc: nil))
+
+        let rows = try readLog(in: kept).filter { !$0.undo }
+        #expect(rows.count == 2)
+        #expect(rows.map { $0.removed?.lastPathComponent } == ["cover.png", nil],
+                "only Convert's line names a removed file")
+
+        let report = try #require(try undoLastRun(in: kept))
+        #expect((report.restored, report.skipped.count) == (2, 0))
+        #expect(FileManager.default.fileExists(atPath: logo.path), "the PNG is back")
+        #expect(!FileManager.default.fileExists(atPath: lib.appendingPathComponent("A/cover.jpg").path))
+        #expect(imageSize(of: jpg).map { [$0.width, $0.height] } == [900, 538], "and the JPEG is as it was")
+    }
+
+    @Test func putBackLeavesAConvertedFileAloneIfItsNameIsTakenAgain() throws {
+        // Someone has put a cover.png back by hand since the run. Its bytes
+        // are not ours to replace, so the JPEG stays and the line is named.
+        let base = tmpdir("name-taken")
+        let lib = base.appendingPathComponent("library")
+        let kept = base.appendingPathComponent("originals")
+        let logo = lib.appendingPathComponent("A/cover.png")
+        try png(logo, 500, 500, RGBA(9, 9, 9, 255))
+        let wb = try WriteBack.start(keptRoot: kept)
+        _ = try wb.one(source: logo, place: "A/cover.png",
+                       recipe: Recipe(canvas: 600, job: .convert, disc: nil))
+
+        try png(logo, 120, 120, RGBA(1, 2, 3, 255))   // back by hand
+        let mine = try Data(contentsOf: logo)
+
+        let report = try #require(try undoLastRun(in: kept))
+        #expect(report.restored == 0)
+        #expect(report.skipped.count == 1)
+        #expect(report.skipped[0].why.contains("in the library again"))
+        #expect(try Data(contentsOf: logo) == mine, "the hand-made file is untouched")
+        #expect(FileManager.default.fileExists(atPath: lib.appendingPathComponent("A/cover.jpg").path),
+                "and the JPEG stays rather than leaving nothing")
+        #expect(FileManager.default.fileExists(atPath: kept.appendingPathComponent("A/cover.png").path),
+                "its original stays kept")
     }
 
     @Test func theoriginalsFolderMayNotBeTheLibraryInsideItOrAboveIt() throws {

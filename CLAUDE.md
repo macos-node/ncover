@@ -279,6 +279,21 @@ backend changes.
     One library, one originals folder, and either app may have written the run
     being put back, so the columns are not ours to move. A test pins the
     shape.
+  - **Convert removes a file as well as writing one, so its line carries an
+    11th column: the library file removed.** Decided with the sibling
+    (2026-11-22, its 0.7.0). Only Convert's lines have it — ten columns stay
+    readable by any version, and a reader that predates the column skips an
+    11-column line rather than putting a PNG's bytes back under the JPEG's
+    name. `readLog` therefore accepts ten **or** eleven, and the undo reads
+    the 11th as the name the original returns to, then removes the JPEG.
+    Convert's own order is the opposite way round from the keep-format jobs:
+    write the new file beside the source, and only once it is whole remove
+    the source — if that removal fails the JPEG goes again, so the library is
+    as it was.
+  - **The alpha guard asks the DESTINATION's format.** For the keep-format
+    jobs source and destination are one file, so it never mattered; Convert
+    reads a PNG and writes a JPEG, and asking the source would mean never
+    refusing anything.
   - **The confirm is the state, not a dialog the view owns.**
     `run(confirmed:)` returns having set `pendingLibraryRun`, and the alert is
     bound to it, so the question cannot be mislaid and the run cannot start

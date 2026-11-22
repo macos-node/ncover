@@ -291,7 +291,7 @@ final class BatchRunner: ObservableObject {
             // Shown in the section as well as refused here, as the disc
             // refusal is: the two read the same sentence, so they cannot
             // disagree about why Run will not go.
-            if !recipe.job.keepsFile {
+            if case .frame = recipe.job {
                 return WriteBackError.notAKeepFormatJob(recipe.job.name).localizedDescription
             }
             guard let kept = originalsFolder else {
@@ -636,9 +636,10 @@ final class BatchRunner: ObservableObject {
                 }
                 if let slot = try wb.one(source: hit, place: place, recipe: r, dry: dry) {
                     ok += 1
-                    record(Row(rel: rel, outcome: .wrote(
-                        dry ? "would be replaced in the library, original kept at \(slot.path)"
-                            : "replaced in the library, original kept at \(slot.path)")))
+                    let did = r.job == .convert
+                        ? "converted in the library, the PNG kept at \(slot.path)"
+                        : "replaced in the library, original kept at \(slot.path)"
+                    record(Row(rel: rel, outcome: .wrote(dry ? "would be \(did)" : did)))
                 } else {
                     skipped += 1
                     record(Row(rel: rel, outcome: .skipped("\(r.job.name) would not change it")))
@@ -743,13 +744,24 @@ final class BatchRunner: ObservableObject {
     private func askLibraryRun() {
         guard let kept = originalsFolder, let lib = try? currentScope().guardRoot else { return }
         let n = actionCount ?? total
+        let what = recipe.job == .convert
+            ? """
+              Each PNG under \(lib.path(percentEncoded: false)) becomes a JPEG of the same pixels \
+              beside it, and the PNG is removed: cover.png becomes cover.jpg, so rescan the \
+              library in ndisc after.
+              """
+            : """
+              Each cover under \(lib.path(percentEncoded: false)) is replaced where it is, in its \
+              own name and format.
+              """
         pendingLibraryRun = Ask(
-            title: "Replace \(n) cover\(n == 1 ? "" : "s") in the library?",
+            title: recipe.job == .convert
+                ? "Convert \(n) file\(n == 1 ? "" : "s") in the library?"
+                : "Replace \(n) cover\(n == 1 ? "" : "s") in the library?",
             detail: """
-                Each cover under \(lib.path(percentEncoded: false)) is replaced where it is, in \
-                its own name and format. Its original is copied first to the same place under \
+                \(what) Its original is copied first to the same place under \
                 \(kept.path(percentEncoded: false)), and every swap is logged there in \
-                \(WRITEBACK_LOG). A cover whose original is already kept is refused. Put back \
+                \(WRITEBACK_LOG). A file whose original is already kept is refused. Put back \
                 last run restores them.
                 """)
     }

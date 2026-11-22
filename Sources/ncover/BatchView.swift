@@ -103,7 +103,7 @@ struct BatchView: View {
                         ForEach(BatchRunner.Output.allCases) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .tip("Either the results go to a folder of their own, or each cover is replaced where it lives with its original kept first. Into the library is Cap, Square and Pad only.")
+                    .tip("Either the results go to a folder of their own, or each cover is replaced where it lives with its original kept first. Into the library is Cap, Square, Pad and Convert — Cover and Fit write a PNG under another name, so they cannot.")
 
                     if run.output == .folder {
                         LabeledContent("Output") {
@@ -126,7 +126,7 @@ struct BatchView: View {
                                 Button("Choose…") { run.chooseOriginals() }
                             }
                         }
-                        .tip("The folder each replaced original is copied to, under the same path as in the library, with the log beside them. Not the library, inside it, or above it. Remembered.")
+                        .tip("The folder each replaced original is copied to, under the same path as in the library, with the log beside them. Convert's PNG is kept there under its own name, and the JPEG takes its place in the library — rescan in ndisc after. Not the library, inside it, or above it. Remembered.")
                         if !run.recipe.job.keepsFile {
                             // The same sentence `blocker` refuses with, so the
                             // reason is here rather than only under the Run

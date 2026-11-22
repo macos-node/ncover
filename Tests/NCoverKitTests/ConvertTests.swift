@@ -95,23 +95,13 @@ struct ConvertTests {
         #expect(jobRefusal(job: .frame(.cover), disc: true) == nil)
     }
 
-    @Test func convertIsRefusedIntoTheLibraryBecauseItRenamesTheFile() throws {
-        // `cover.jpg` beside a `cover.png` is two covers in one release and
-        // ndisc still pointing at the old one. Replacing in place means
-        // removing the PNG, which the shared log cannot record yet — so it is
-        // refused here rather than invented on one side.
-        let base = tmpdir("library")
-        let lib = base.appendingPathComponent("lib/A/One")
-        try FileManager.default.createDirectory(at: lib, withIntermediateDirectories: true)
-        let png = lib.appendingPathComponent("cover.png")
-        try opaque(600, 600).writePNG(to: png)
-        let wb = try WriteBack.start(keptRoot: base.appendingPathComponent("originals"))
-        #expect(throws: WriteBackError.notAKeepFormatJob("Convert")) {
-            _ = try wb.one(source: png, place: "A/One/cover.png",
-                           recipe: Recipe(canvas: 600, job: .convert, disc: nil))
-        }
-        #expect(try Data(contentsOf: png).count > 0, "and the library file is untouched")
-    }
+    // `convertIsRefusedIntoTheLibraryBecauseItRenamesTheFile` was here, and
+    // it is **deleted rather than weakened**: the question it pinned — how a
+    // log line records a swap that removes a file as well as writing one —
+    // was settled with the GTK sibling on 2026-11-22 (an 11th column, Convert
+    // only), so Convert goes into the library now. What it would do there is
+    // pinned in WriteBackTests: the eleven columns, the two refusals, a mixed
+    // log, and a put back whose name is taken again.
 
     @Test func thenoOpsClaimNoNameSoTheRealWorkIsNotRefusedAsAClash() throws {
         // `cover.jpg` is left alone and `cover.png` beside it becomes
