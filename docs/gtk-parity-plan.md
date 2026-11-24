@@ -53,7 +53,10 @@ SDF masks with rounded-rect and chamfer shapes, `MaskRegion.artwork`, **SVG
 vector export** with an honest `hasVectorForm` per operation, *Use as
 template*, **type** as outlines, `.clr` import/export with
 `~/Library/Colors` and `NSColorPanel` palette attachment, and the disk image.
-GTK's phases 2, 3 and 5 are these, still unbuilt there.
+GTK has since built phases 2 and 3 (its 0.6.0: SDF-style masks, mask fit,
+SVG export, template, background) and phase 5's type and colour wells (its
+0.8.0), all ported from here. What stays Mac-only: `.clr`, `~/Library/Colors`,
+`NSColorPanel` attachment and the disk image.
 
 ---
 
@@ -723,6 +726,34 @@ JPEG is not converted. **Three decisions are new and travel back:**
 Also here now, and not in any phase: `wouldWrite` is the one question asked
 of a real file — what would this job write for it, or nothing — and the
 survey, the plan and the run all ask it.
+
+## Phase G: what GTK built 2026-11-24, and what this app takes from it
+
+Recorded from the Linux side. **GTK's release notes are now its CHANGELOG
+sections**, each with a *For the macOS sibling* subsection, so
+`gh release view vX.Y.Z --repo xjmzx/ncover` says what was built there and
+what to port.
+
+- **Its 0.8.0: type and colour wells, ported FROM here.** Nothing to port
+  back. Its deliberate differences: no alignment field (as here), the type
+  layer is coverage only, `+ Type` adds a step and the controls edit the last
+  one live (its document is a stack of steps), and its Batch keeps Rim /
+  Corner wells for a Gradient disc this app's Batch does not have.
+- **G1. The icon art changed again on 2026-11-24** (dotted ring, crosshair
+  ticks). Take the rounded `ncover.svg` master as `icon.svg`, then
+  `make icon` to regenerate `ncover.icns`, and check the 1024 slice by its
+  pixels (CLAUDE.md, traps). GTK shipped it in 0.8.0.
+- **G2. Blank is White or Clear (port; S)** — **built on GTK first, in its
+  0.9.0**, so a divergence until this app follows. Clear is a fully
+  transparent canvas: still a vector source (`vectorRefusal` nil), whose SVG
+  form is *nothing* where White's is a white `<rect>`. On Clear,
+  `.background` fills behind everything built at once; on White it changes
+  no pixel until a mask or margin makes something transparent (correct, and
+  the reason Clear exists). Here that means `blankSource` gains a clear
+  variant and the Blank control becomes a White / Clear choice. Port the two
+  tests by name from GTK's `vector.rs`:
+  `a_clear_canvas_is_transparent_and_writes_no_ground` and
+  `background_on_a_clear_canvas_fills_behind_what_is_built`.
 
 ## Not yet on either side
 
